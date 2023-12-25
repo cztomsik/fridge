@@ -10,11 +10,19 @@ Small wrapper around [sqlite3](https://sqlite.org/) extracted from
 - [x] reading strings
 - [x] alloc-free iteration over rows
 - [ ] migrations
+- [ ] docs
 
 ## Installation
 
 ```sh
 zig fetch https://github.com/cztomsik/ava-sqlite/archive/refs/heads/main.tar.gz --save
+```
+
+Then, in your `build.zig`:
+
+```zig
+exe.addModule("ava-sqlite", b.dependency("ava-sqlite", .{}).module("ava-sqlite"));
+exe.linkSystemLibrary("sqlite3");
 ```
 
 ## Usage
