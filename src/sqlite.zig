@@ -5,6 +5,8 @@ const c = @cImport(
     @cInclude("sqlite3.h"),
 );
 
+pub const migrate = @import("migrate.zig").migrate;
+
 /// A SQLite database connection.
 pub const SQLite3 = struct {
     db: *c.sqlite3,
@@ -34,6 +36,18 @@ pub const SQLite3 = struct {
         defer stmt.deinit();
 
         try stmt.exec();
+    }
+
+    pub fn execAll(self: *SQLite3, sql: []const u8) !void {
+        var next = std.mem.trimRight(u8, sql, " \n\t");
+
+        while (true) {
+            var stmt = try self.query(next, .{});
+            defer stmt.deinit();
+
+            try stmt.exec();
+            next = stmt.tail orelse return;
+        }
     }
 
     /// Returns the number of rows affected by the last INSERT, UPDATE or
@@ -80,15 +94,10 @@ pub const SQLite3 = struct {
         var tail: [*c]const u8 = null;
         try check(c.sqlite3_prepare_v2(self.db, sql.ptr, @intCast(sql.len), &stmt, &tail));
 
-        if (tail != null and tail != sql.ptr + sql.len) {
-            const rest = sql[@intFromPtr(tail) - @intFromPtr(sql.ptr) ..];
-            log.err("Trailing SQL({}): {s}\n", .{ rest.len, rest });
-            return error.SQLiteError;
-        }
-
         return .{
             .stmt = stmt.?,
             .sql = sql,
+            .tail = if (tail != null and tail != sql.ptr + sql.len) sql[@intFromPtr(tail) - @intFromPtr(sql.ptr) ..] else null,
         };
     }
 };
@@ -97,6 +106,7 @@ pub const SQLite3 = struct {
 pub const Statement = struct {
     stmt: *c.sqlite3_stmt,
     sql: []const u8,
+    tail: ?[]const u8,
 
     /// Deinitializes the prepared statement.
     pub fn deinit(self: *Statement) void {

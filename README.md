@@ -8,8 +8,9 @@ Small wrapper around [sqlite3](https://sqlite.org/) extracted from
 - [x] prepared statements
 - [x] reading primitive types
 - [x] reading strings
+- [x] reading rows into structs
 - [x] alloc-free iteration over rows
-- [ ] migrations
+- [ ] **migrations** inspired by [David Röthlisberger](https://david.rothlis.net/declarative-schema-migration-for-sqlite/) (TODO: migrate indices)
 - [ ] docs
 
 ## Installation
@@ -39,6 +40,18 @@ pub fn main() !void {
     std.log.debug("Hello {}", .{try s.read(u32)});
 }
 ```
+
+## Migrations
+
+You can auto-migrate db with:
+
+```zig
+// Just make sure you have table names in quotes
+try sqlite.migrate(allocator, &db, @embedFile("db_schema.sql"));
+```
+
+This will (re)create tables and reuse as much data as possible. It's not
+fulfledged migration system, but it's good enough for most cases.
 
 ## License
 MIT
