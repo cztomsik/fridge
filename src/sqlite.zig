@@ -30,6 +30,40 @@ pub const SQLite3 = struct {
         _ = c.sqlite3_close(self.db);
     }
 
+    /// Shorthand for inserting a row into the given table. The row must be a
+    /// struct with fields matching the columns of the table.
+    pub fn insert(self: *SQLite3, comptime table_name: []const u8, row: anytype) !void {
+        comptime var fields: []const u8 = "";
+        comptime var placeholders: []const u8 = "";
+
+        inline for (std.meta.fields(@TypeOf(row)), 0..) |f, i| {
+            if (i > 0) {
+                fields = fields ++ ", ";
+                placeholders = placeholders ++ ", ";
+            }
+
+            fields = fields ++ f.name;
+            placeholders = placeholders ++ "?";
+        }
+
+        try self.exec("INSERT INTO " ++ table_name ++ "(" ++ fields ++ ") VALUES (" ++ placeholders ++ ")", row);
+    }
+
+    /// Shorthand for updating a row in the given table. The row must be a
+    /// struct with fields matching the columns of the table. The `id` field
+    /// must be set to the ID of the row to update.
+    pub fn update(self: *SQLite3, comptime table_name: []const u8, row: anytype) !void {
+        comptime var fields: []const u8 = "";
+
+        inline for (std.meta.fields(@TypeOf(row))) |f| {
+            if (std.mem.eql(u8, f.name, "id")) continue;
+            if (fields.len > 0) fields = fields ++ ", ";
+            fields = fields ++ f.name ++ " = ?";
+        }
+
+        try self.exec("UPDATE " ++ table_name ++ " SET " ++ fields ++ " WHERE id = ?", row.id);
+    }
+
     /// Executes the given SQL, ignoring any rows it returns.
     pub fn exec(self: *SQLite3, sql: []const u8, args: anytype) !void {
         var stmt = try self.query(sql, args);
@@ -120,12 +154,18 @@ pub const Statement = struct {
         try check(switch (@TypeOf(arg)) {
             bool => c.sqlite3_bind_int(self.stmt, i, if (arg) 1 else 0),
             i32 => c.sqlite3_bind_int(self.stmt, i, arg),
-            u32, i64 => c.sqlite3_bind_int64(self.stmt, i, arg),
-            f64 => c.sqlite3_bind_double(self.stmt, i, arg),
+            u32, i64, @TypeOf(1) => c.sqlite3_bind_int64(self.stmt, i, arg),
+            f64, @TypeOf(0.0) => c.sqlite3_bind_double(self.stmt, i, arg),
             []const u8 => c.sqlite3_bind_text(self.stmt, i, arg.ptr, @intCast(arg.len), null),
             else => |T| {
-                if (comptime @typeInfo(T) == .Optional) {
+                const info = @typeInfo(T);
+
+                if (comptime info == .Optional) {
                     return if (arg == null) check(c.sqlite3_bind_null(self.stmt, i)) else self.bind(index, arg.?);
+                }
+
+                if (comptime info == .Pointer and @typeInfo(info.Pointer.child) == .Array and @typeInfo(info.Pointer.child).Array.child == u8) {
+                    return self.bind(index, @as([]const u8, arg));
                 }
 
                 @compileError("TODO " ++ @typeName(T));
