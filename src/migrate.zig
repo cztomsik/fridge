@@ -102,7 +102,7 @@ fn migrateObjects(allocator: std.mem.Allocator, db: *sqlite.SQLite3, pristine: *
 
     // Now we can check for extraneous objects and drop them
 
-    const all_names = try db.getString(allocator, "SELECT json_group_array(name) FROM sqlite_master WHERE type = ?", .{kind});
+    const all_names = try db.getString(allocator, "SELECT json_group_array(name) FROM sqlite_master WHERE type = ? AND name != 'sqlite_sequence'", .{kind});
     defer allocator.free(all_names);
 
     var extraneous = try pristine.query("SELECT json_each.value FROM json_each(?) WHERE json_each.value NOT IN (SELECT name FROM sqlite_master WHERE type = ?)", .{ all_names, kind });
