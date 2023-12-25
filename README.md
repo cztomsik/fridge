@@ -10,7 +10,7 @@ Small wrapper around [sqlite3](https://sqlite.org/) extracted from
 - [x] reading strings
 - [x] reading rows into structs
 - [x] alloc-free iteration over rows
-- [ ] **migrations** inspired by [David Röthlisberger](https://david.rothlis.net/declarative-schema-migration-for-sqlite/) (TODO: migrate indices)
+- [ ] **migrations** inspired by [David Röthlisberger](https://david.rothlis.net/declarative-schema-migration-for-sqlite/)
 - [ ] docs
 
 ## Installation
