@@ -96,10 +96,9 @@ pub const SQLite3 = struct {
         var stmt = try self.query(sql, args);
         defer stmt.deinit();
 
-        return switch (@typeInfo(T)) {
-            .Int, .Float, .Bool => stmt.read(T),
-            else => @compileError("Only primitive types are supported"),
-        };
+        if (comptime !isPrimitive(T)) @compileError("Only primitive types are supported");
+
+        return stmt.read(T);
     }
 
     /// Shorthand for `self.query(sql, args).read([]const u8)`. Returns the
@@ -216,9 +215,6 @@ pub const Statement = struct {
         const i: c_int = @intCast(index);
 
         return switch (T) {
-            bool => c.sqlite3_column_int(self.stmt, i) != 0,
-            u32, i32 => @intCast(c.sqlite3_column_int64(self.stmt, i)),
-            f32, f64 => @floatCast(c.sqlite3_column_double(self.stmt, i)),
             []const u8 => try self.column(?[]const u8, index) orelse error.NullPointer,
             ?[]const u8 => {
                 const len = c.sqlite3_column_bytes(self.stmt, i);
@@ -226,7 +222,13 @@ pub const Statement = struct {
 
                 return if (data != null) data[0..@intCast(len)] else null;
             },
-            else => @compileError("TODO: " ++ @typeName(T)),
+            else => switch (@typeInfo(T)) {
+                .Bool => c.sqlite3_column_int(self.stmt, i) != 0,
+                .Int => @intCast(c.sqlite3_column_int64(self.stmt, i)),
+                .Float => @floatCast(c.sqlite3_column_double(self.stmt, i)),
+                .Optional => |o| if (c.sqlite3_column_type(self.stmt, i) == c.SQLITE_NULL) null else try self.column(o.child, index),
+                else => @compileError("TODO: " ++ @typeName(T)),
+            },
         };
     }
 
@@ -264,4 +266,12 @@ pub fn check(code: c_int) !void {
             return error.SQLiteError;
         },
     }
+}
+
+fn isPrimitive(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .Int, .Float, .Bool => true,
+        .Optional => |o| isPrimitive(o.child),
+        else => false,
+    };
 }
