@@ -30,6 +30,11 @@ pub const SQLite3 = struct {
         _ = c.sqlite3_close(self.db);
     }
 
+    /// Sets the busy timeout in milliseconds. 0 means no timeout.
+    pub fn setBusyTimeout(self: *SQLite3, ms: u32) !void {
+        try check(c.sqlite3_busy_timeout(self.db, @intCast(ms)));
+    }
+
     /// Shorthand for inserting a row into the given table. The row must be a
     /// struct with fields matching the columns of the table.
     pub fn insert(self: *SQLite3, comptime table_name: []const u8, row: anytype) !void {
