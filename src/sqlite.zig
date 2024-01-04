@@ -232,6 +232,7 @@ pub const Statement = struct {
         };
     }
 
+    /// Advances the prepared statement to the next row.
     pub fn step(self: *Statement) !enum { row, done } {
         const code = c.sqlite3_step(self.stmt);
 
@@ -243,6 +244,11 @@ pub const Statement = struct {
                 unreachable;
             },
         };
+    }
+
+    /// Resets the prepared statement, allowing it to be executed again.
+    pub fn reset(self: *Statement) !void {
+        try check(c.sqlite3_reset(self.stmt));
     }
 };
 
