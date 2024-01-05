@@ -270,10 +270,51 @@ pub fn RowIterator(comptime T: type) type {
 }
 
 pub fn check(code: c_int) !void {
+    const SQLiteError = error{
+        SQLITE_ABORT,
+        SQLITE_AUTH,
+        SQLITE_BUSY,
+        SQLITE_CANTOPEN,
+        SQLITE_CONSTRAINT,
+        SQLITE_CORRUPT,
+        SQLITE_DONE,
+        SQLITE_EMPTY,
+        SQLITE_ERROR,
+        SQLITE_FORMAT,
+        SQLITE_FULL,
+        SQLITE_INTERNAL,
+        SQLITE_INTERRUPT,
+        SQLITE_IOERR,
+        SQLITE_LOCKED,
+        SQLITE_MISMATCH,
+        SQLITE_MISUSE,
+        SQLITE_NOLFS,
+        SQLITE_NOMEM,
+        SQLITE_NOTADB,
+        SQLITE_NOTFOUND,
+        SQLITE_NOTICE,
+        SQLITE_OK,
+        SQLITE_PERM,
+        SQLITE_PROTOCOL,
+        SQLITE_RANGE,
+        SQLITE_READONLY,
+        SQLITE_ROW,
+        SQLITE_SCHEMA,
+        SQLITE_TOOBIG,
+        SQLITE_WARNING,
+    };
+
     switch (code) {
         c.SQLITE_OK, c.SQLITE_DONE, c.SQLITE_ROW => return,
         else => {
+            @setCold(true);
+
             log.err("SQLite error: {} {s}", .{ code, c.sqlite3_errstr(code) });
+
+            inline for (comptime std.meta.fields(SQLiteError)) |f| {
+                if (code == @field(c, f.name)) return @field(SQLiteError, f.name);
+            }
+
             return error.SQLiteError;
         },
     }
