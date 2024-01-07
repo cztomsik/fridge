@@ -22,7 +22,7 @@ zig fetch https://github.com/cztomsik/ava-sqlite/archive/refs/heads/main.tar.gz 
 Then, in your `build.zig`:
 
 ```zig
-exe.addModule("ava-sqlite", b.dependency("ava-sqlite", .{}).module("ava-sqlite"));
+exe.root_module.addImport("ava-sqlite", b.dependency("ava-sqlite", .{}).module("ava-sqlite"));
 exe.linkSystemLibrary("sqlite3");
 ```
 
@@ -54,4 +54,5 @@ This will (re)create tables and reuse as much data as possible. It's not
 fulfledged migration system, but it's good enough for most cases.
 
 ## License
+
 MIT
