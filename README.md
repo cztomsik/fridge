@@ -5,6 +5,7 @@ Small wrapper around [sqlite3](https://sqlite.org/) extracted from
 
 ## Features
 
+- [x] support both bundling sqlite3 with your app or linking system sqlite3
 - [x] prepared statements
 - [x] reading primitive types
 - [x] reading strings
@@ -22,8 +23,9 @@ zig fetch https://github.com/cztomsik/ava-sqlite/archive/refs/heads/main.tar.gz 
 Then, in your `build.zig`:
 
 ```zig
-exe.root_module.addImport("ava-sqlite", b.dependency("ava-sqlite", .{}).module("ava-sqlite"));
-exe.linkSystemLibrary("sqlite3");
+// or .bundle = false if you want to link system sqlite3
+const sqlite = b.dependency("ava-sqlite", .{ .bundle = true });
+exe.root_module.addImport("ava-sqlite", sqlite.module("ava-sqlite"));
 ```
 
 ## Usage
