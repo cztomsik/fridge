@@ -126,7 +126,10 @@ pub const SQLite3 = struct {
 
     /// Creates a prepared statement from the given SQL.
     pub fn prepare(self: *SQLite3, sql: []const u8) !Statement {
-        errdefer log.err("Failed to prepare SQL: {s}\n", .{sql});
+        errdefer {
+            log.debug("{s}", .{c.sqlite3_errmsg(self.db)});
+            log.debug("Failed to prepare SQL: {s}\n", .{sql});
+        }
 
         var stmt: ?*c.sqlite3_stmt = null;
         var tail: [*c]const u8 = null;
@@ -245,6 +248,8 @@ pub const Statement = struct {
             c.SQLITE_ROW => return .row,
             c.SQLITE_DONE => return .done,
             else => {
+                errdefer if (c.sqlite3_db_handle(self.stmt)) |db| log.debug("{s}", .{c.sqlite3_errmsg(db)});
+
                 try check(code);
                 unreachable;
             },
