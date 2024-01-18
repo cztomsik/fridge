@@ -196,7 +196,13 @@ pub const Statement = struct {
     /// Reads the next row, either into a struct/tuple or a single value from
     /// the first column. Returns `error.NoRows` if there are no more rows.
     pub fn read(self: *Statement, comptime T: type) !T {
-        if (try self.step() != .row) return error.NoRows;
+        return try self.readNext(T) orelse error.NoRows;
+    }
+
+    /// Reads the next row, either into a struct/tuple or a single value from
+    /// the first column. Returns `null` if there are no more rows.
+    pub fn readNext(self: *Statement, comptime T: type) !?T {
+        if (try self.step() != .row) return null;
 
         if (comptime @typeInfo(T) == .Struct) {
             var res: T = undefined;
@@ -208,10 +214,12 @@ pub const Statement = struct {
             return res;
         }
 
-        return self.column(T, 0);
+        return try self.column(T, 0);
     }
 
     /// Returns an iterator over the rows returned by the prepared statement.
+    /// Only useful if you need iterator with argless `next()` and fixed return
+    /// type.
     pub fn iterator(self: *Statement, comptime T: type) RowIterator(T) {
         return .{
             .stmt = self,
@@ -262,14 +270,13 @@ pub const Statement = struct {
     }
 };
 
+/// A generic iterator over the rows returned by a prepared statement.
 pub fn RowIterator(comptime T: type) type {
     return struct {
         stmt: *Statement,
 
-        pub fn next(self: *RowIterator(T)) !?T {
-            errdefer log.err("Failed to read row: {s}\n", .{self.stmt.sql});
-
-            return self.stmt.read(T) catch |e| if (e == error.NoRows) null else e;
+        pub fn next(self: *@This()) !?T {
+            return self.stmt.readNext(T);
         }
     };
 }

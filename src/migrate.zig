@@ -37,8 +37,7 @@ fn migrateObjects(allocator: std.mem.Allocator, db: *sqlite.SQLite3, pristine: *
     var objects = try pristine.query("SELECT name, sql FROM sqlite_master WHERE type = ? AND name != 'sqlite_sequence' AND name NOT LIKE 'sqlite_autoindex_%'", .{kind});
     defer objects.deinit();
 
-    var it = objects.iterator(struct { []const u8, []const u8 });
-    while (try it.next()) |row| {
+    while (try objects.readNext(struct { []const u8, []const u8 })) |row| {
         log.debug("-- Checking {s} {s}", .{ kind, row[0] });
 
         // Check if object exists
@@ -108,8 +107,7 @@ fn migrateObjects(allocator: std.mem.Allocator, db: *sqlite.SQLite3, pristine: *
     var extraneous = try pristine.query("SELECT json_each.value FROM json_each(?) WHERE json_each.value NOT IN (SELECT name FROM sqlite_master WHERE type = ?)", .{ all_names, kind });
     defer extraneous.deinit();
 
-    var it2 = extraneous.iterator([]const u8);
-    while (try it2.next()) |name| {
+    while (try extraneous.readNext([]const u8)) |name| {
         log.debug("-- Dropping extraneous {s} {s}", .{ kind, name });
 
         const drop_sql = try std.fmt.allocPrint(allocator, "DROP {s} {s}", .{ kind, name });
