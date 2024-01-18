@@ -160,7 +160,7 @@ pub const Statement = struct {
             i32 => c.sqlite3_bind_int(self.stmt, i, arg),
             u32, i64, @TypeOf(1) => c.sqlite3_bind_int64(self.stmt, i, arg),
             f64, @TypeOf(0.0) => c.sqlite3_bind_double(self.stmt, i, arg),
-            []const u8 => c.sqlite3_bind_text(self.stmt, i, arg.ptr, @intCast(arg.len), null),
+            []const u8, [:0]const u8 => c.sqlite3_bind_text(self.stmt, i, arg.ptr, @intCast(arg.len), null),
             else => |T| {
                 const info = @typeInfo(T);
 
