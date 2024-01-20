@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) !void {
     const sqlite = b.addModule("ava-sqlite", .{
         .root_source_file = .{ .path = "src/sqlite.zig" },
     });
+    sqlite.link_libc = true;
 
     if (bundle) {
         const src = b.dependency("sqlite_source", .{});
@@ -13,7 +14,6 @@ pub fn build(b: *std.Build) !void {
         sqlite.addCSourceFile(.{ .file = src.path("sqlite3.c"), .flags = &.{"-std=c99"} });
     } else {
         // sqlite.linkSystemLibrary("sqlite3", .{});
-        sqlite.link_libc = true;
         try sqlite.link_objects.append(b.allocator, .{
             .system_lib = .{
                 .name = b.dupe("sqlite3"),
