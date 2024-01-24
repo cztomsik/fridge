@@ -109,11 +109,11 @@ pub const SQLite3 = struct {
     /// Shorthand for `self.query(sql, args).read([]const u8)`. Returns the
     /// first column of the first row returned by the query. The returned slice
     /// needs to be freed by the caller.
-    pub fn getString(self: *SQLite3, allocator: std.mem.Allocator, sql: []const u8, args: anytype) ![]const u8 {
+    pub fn getString(self: *SQLite3, allocator: std.mem.Allocator, sql: []const u8, args: anytype) ![:0]const u8 {
         var stmt = try self.query(sql, args);
         defer stmt.deinit();
 
-        return allocator.dupe(u8, try stmt.read([]const u8));
+        return allocator.dupeZ(u8, try stmt.read([:0]const u8));
     }
 
     /// Shorthand for `self.prepare(sql).bindAll(args)`. Returns the prepared
@@ -231,12 +231,12 @@ pub const Statement = struct {
         const i: c_int = @intCast(index);
 
         return switch (T) {
-            []const u8 => try self.column(?[]const u8, index) orelse error.NullPointer,
-            ?[]const u8 => {
+            []const u8, [:0]const u8 => try self.column(?T, index) orelse error.NullPointer,
+            ?[]const u8, ?[:0]const u8 => {
                 const len = c.sqlite3_column_bytes(self.stmt, i);
                 const data = c.sqlite3_column_text(self.stmt, i);
 
-                return if (data != null) data[0..@intCast(len)] else null;
+                return if (data != null) data[0..@intCast(len) :0] else null;
             },
             else => switch (@typeInfo(T)) {
                 .Bool => c.sqlite3_column_int(self.stmt, i) != 0,
