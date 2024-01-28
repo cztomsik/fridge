@@ -7,6 +7,9 @@ const c = @cImport(
 
 pub const migrate = @import("migrate.zig").migrate;
 
+/// Convenience wrapper for a blob of data.
+pub const Blob = struct { []const u8 };
+
 /// A SQLite database connection.
 pub const SQLite3 = struct {
     db: *c.sqlite3,
@@ -159,11 +162,13 @@ pub const Statement = struct {
         const i: c_int = @intCast(index + 1);
 
         try check(switch (@TypeOf(arg)) {
+            @TypeOf(null) => c.sqlite3_bind_null(self.stmt, i),
             bool => c.sqlite3_bind_int(self.stmt, i, if (arg) 1 else 0),
             i32 => c.sqlite3_bind_int(self.stmt, i, arg),
             u32, i64, @TypeOf(1) => c.sqlite3_bind_int64(self.stmt, i, arg),
             f64, @TypeOf(0.0) => c.sqlite3_bind_double(self.stmt, i, arg),
             []const u8, [:0]const u8 => c.sqlite3_bind_text(self.stmt, i, arg.ptr, @intCast(arg.len), null),
+            Blob => c.sqlite3_bind_blob(self.stmt, i, arg[0].ptr, @intCast(arg[0].len), null),
             else => |T| {
                 const info = @typeInfo(T);
 
