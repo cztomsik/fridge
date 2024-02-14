@@ -99,7 +99,7 @@ pub const SQLite3 = struct {
     }
 
     /// Shorthand for `self.query(sql, args).read(T)` where `T` is a primitive
-    /// type. Returns the first value of the first row returned by the query.
+    /// type. Returns the first column of the first row returned by the query.
     pub fn get(self: *SQLite3, comptime T: type, sql: []const u8, args: anytype) !T {
         var stmt = try self.query(sql, args);
         defer stmt.deinit();
@@ -109,14 +109,31 @@ pub const SQLite3 = struct {
         return stmt.read(T);
     }
 
-    /// Shorthand for `self.query(sql, args).read([]const u8)`. Returns the
-    /// first column of the first row returned by the query. The returned slice
-    /// needs to be freed by the caller.
+    /// Shorthand for `self.query(sql, args).readAlloc(allocator, T)`.
+    /// Allocated memory needs to be freed by the caller.
+    pub fn getAlloc(self: *SQLite3, allocator: std.mem.Allocator, comptime T: type, sql: []const u8, args: anytype) !T {
+        var stmt = try self.query(sql, args);
+        defer stmt.deinit();
+
+        return stmt.readAlloc(allocator, T);
+    }
+
+    /// Shorthand for `self.query(sql, args).readAll(allocator, T)`.
+    /// Allocated memory needs to be freed by the caller.
+    pub fn getAll(self: *SQLite3, allocator: std.mem.Allocator, comptime T: type, sql: []const u8, args: anytype) ![]const T {
+        var stmt = try self.query(sql, args);
+        defer stmt.deinit();
+
+        return stmt.readAll(allocator, T);
+    }
+
+    /// Shorthand for `self.getAlloc(allocator, [:0]const u8, sql, args)`.
+    /// Allocated memory needs to be freed by the caller.
     pub fn getString(self: *SQLite3, allocator: std.mem.Allocator, sql: []const u8, args: anytype) ![:0]const u8 {
         var stmt = try self.query(sql, args);
         defer stmt.deinit();
 
-        return allocator.dupeZ(u8, try stmt.read([:0]const u8));
+        return stmt.readAlloc(allocator, [:0]const u8);
     }
 
     /// Shorthand for `self.prepare(sql).bindAll(args)`. Returns the prepared
@@ -222,6 +239,30 @@ pub const Statement = struct {
         return try self.column(T, 0);
     }
 
+    // Like `read`, but allocates the result using the given allocator.
+    // The allocated memory needs to be freed by the caller.
+    pub fn readAlloc(self: *Statement, allocator: std.mem.Allocator, comptime T: type) !T {
+        return try self.readNextAlloc(allocator, T) orelse error.NoRows;
+    }
+
+    // Like `readNext`, but allocates the result using the given allocator.
+    // The allocated memory needs to be freed by the caller.
+    pub fn readNextAlloc(self: *Statement, allocator: std.mem.Allocator, comptime T: type) !?T {
+        return try dupe(allocator, T, try self.readNext(T) orelse return null);
+    }
+
+    // Reads all rows into a slice, allocating each row using the given allocator.
+    // The allocated memory needs to be freed by the caller.
+    pub fn readAll(self: *Statement, allocator: std.mem.Allocator, comptime T: type) ![]T {
+        var rows = std.ArrayList(T).init(allocator);
+
+        while (try self.readNextAlloc(allocator, T)) |row| {
+            try rows.append(row);
+        }
+
+        return rows.toOwnedSlice();
+    }
+
     /// Returns an iterator over the rows returned by the prepared statement.
     /// Only useful if you need iterator with argless `next()` and fixed return
     /// type.
@@ -242,6 +283,13 @@ pub const Statement = struct {
                 const data = c.sqlite3_column_text(self.stmt, i);
 
                 return if (data != null) data[0..@intCast(len) :0] else null;
+            },
+            Blob => try self.column(?T, index) orelse error.NullPointer,
+            ?Blob => {
+                const len = c.sqlite3_column_bytes(self.stmt, i);
+                const data = c.sqlite3_column_blob(self.stmt, i);
+
+                return if (data != null) Blob{data[0..@intCast(len)]} else null;
             },
             else => switch (@typeInfo(T)) {
                 .Bool => c.sqlite3_column_int(self.stmt, i) != 0,
@@ -342,5 +390,26 @@ fn isPrimitive(comptime T: type) bool {
         .Int, .Float, .Bool => true,
         .Optional => |o| isPrimitive(o.child),
         else => false,
+    };
+}
+
+fn dupe(allocator: std.mem.Allocator, comptime T: type, row: T) std.mem.Allocator.Error!T {
+    return switch (T) {
+        Blob => Blob{try allocator.dupe(u8, row)},
+        []const u8 => allocator.dupe(u8, row),
+        [:0]const u8 => allocator.dupeZ(u8, row),
+        else => switch (@typeInfo(T)) {
+            .Optional => |o| dupe(allocator, o.child, row orelse return null),
+            .Struct => |s| {
+                var copy = row;
+
+                for (s.fields) |f| {
+                    @field(copy, f.name) = try dupe(allocator, f.type, @field(row, f.name));
+                }
+
+                return copy;
+            },
+            else => row,
+        },
     };
 }
