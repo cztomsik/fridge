@@ -399,11 +399,11 @@ fn dupe(allocator: std.mem.Allocator, comptime T: type, row: T) std.mem.Allocato
         []const u8 => allocator.dupe(u8, row),
         [:0]const u8 => allocator.dupeZ(u8, row),
         else => switch (@typeInfo(T)) {
-            .Optional => |o| dupe(allocator, o.child, row orelse return null),
+            .Optional => |o| try dupe(allocator, o.child, row orelse return null),
             .Struct => |s| {
                 var copy = row;
 
-                for (s.fields) |f| {
+                inline for (s.fields) |f| {
                     @field(copy, f.name) = try dupe(allocator, f.type, @field(row, f.name));
                 }
 
