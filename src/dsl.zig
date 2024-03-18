@@ -80,6 +80,17 @@ pub fn Raw(comptime raw_sql: []const u8, comptime T: type) type {
         pub inline fn sql(_: *const @This(), buf: *std.ArrayList(u8)) !void {
             try buf.appendSlice(raw_sql);
         }
+
+        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+            if (comptime T == void) return;
+
+            // TODO: another segfault in zig compiler
+            // inline for (@typeInfo(T).Struct.fields) |f| {
+            // try stmt.bind(counter.*, @field(self.bindings, f.name));
+            try stmt.bind(counter.*, self.bindings);
+            counter.* += 1;
+            // }
+        }
     };
 }
 
@@ -116,6 +127,30 @@ pub fn Where(comptime Head: type) type {
             } else {
                 inline for (@typeInfo(T).Struct.fields) |f| {
                     try buf.appendSlice(comptime f.name ++ " = ?");
+                }
+            }
+        }
+
+        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+            if (comptime Head == void) return;
+
+            try bindPart(self.head, stmt, counter);
+        }
+
+        fn bindPart(part: anytype, stmt: anytype, counter: *usize) !void {
+            const T = @TypeOf(part);
+
+            if (comptime @hasDecl(T, "bind")) {
+                return part.bind(stmt, counter);
+            }
+
+            if (comptime @typeInfo(T) == .Struct and @typeInfo(T).Struct.fields.len == 3) {
+                try bindPart(part[0], stmt, counter);
+                try bindPart(part[2], stmt, counter);
+            } else {
+                inline for (@typeInfo(T).Struct.fields) |f| {
+                    try stmt.bind(counter.*, @field(part, f.name));
+                    counter.* += 1;
                 }
             }
         }
@@ -162,6 +197,11 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
             try self.frm.sql(buf);
             try self.whr.sql(buf);
         }
+
+        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+            try self.frm.bind(stmt, counter);
+            try self.whr.bind(stmt, counter);
+        }
     };
 }
 
@@ -182,6 +222,13 @@ pub fn Insert(comptime T: type, comptime into: []const u8, comptime V: type) typ
 
         pub fn build(self: *const @This(), builder: anytype) !void {
             try builder.push(self.data);
+        }
+
+        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+            inline for (@typeInfo(V).Struct.fields) |f| {
+                try stmt.bind(counter.*, @field(self.data, f.name));
+                counter.* += 1;
+            }
         }
     };
 }
@@ -214,7 +261,14 @@ pub fn Update(comptime T: type, comptime tbl: []const u8, comptime W: type, comp
             try self.whr.sql(buf);
         }
 
-        // TODO: bind
+        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+            inline for (@typeInfo(V).Struct.fields) |f| {
+                try stmt.bind(counter.*, @field(self.data, f.name));
+                counter.* += 1;
+            }
+
+            try self.whr.bind(stmt, counter);
+        }
     };
 }
 
@@ -241,7 +295,9 @@ pub fn Delete(comptime T: type, comptime tbl: []const u8, comptime W: type) type
             try self.whr.sql(buf);
         }
 
-        // TODO: bind
+        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+            try self.whr.bind(stmt, counter);
+        }
     };
 }
 
@@ -282,7 +338,7 @@ test "query" {
     );
 
     try expectSql(
-        query(Person).where(.{ .name = "Alice" }).orWhere(.{ .age = @as(usize, 20) }),
+        query(Person).where(.{ .name = "Alice" }).orWhere(.{ .age = 20 }),
         "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
     );
 }
@@ -303,6 +359,11 @@ test "update" {
         update(Person).set(.{ .name = "Alice" }).where(.{ .age = 20 }),
         "UPDATE Person SET name = ? WHERE age = ?",
     );
+
+    try expectSql(
+        update(Person).set(.{ .name = "Alice" }).where(.{ .age = 20 }).orWhere(.{ .name = "Bob" }),
+        "UPDATE Person SET name = ? WHERE age = ? OR name = ?",
+    );
 }
 
 test "delete" {
@@ -311,5 +372,10 @@ test "delete" {
     try expectSql(
         delete(Person).where(.{ .age = 20 }),
         "DELETE FROM Person WHERE age = ?",
+    );
+
+    try expectSql(
+        delete(Person).where(.{ .age = 20 }).orWhere(.{ .name = "Bob" }),
+        "DELETE FROM Person WHERE age = ? OR name = ?",
     );
 }
