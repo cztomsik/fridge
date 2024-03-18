@@ -77,7 +77,7 @@ pub fn Raw(comptime raw_sql: []const u8, comptime T: type) type {
     return struct {
         bindings: T,
 
-        pub fn sql(_: *const @This(), buf: *std.ArrayList(u8)) !void {
+        pub inline fn sql(_: *const @This(), buf: *std.ArrayList(u8)) !void {
             try buf.appendSlice(raw_sql);
         }
     };
@@ -107,13 +107,21 @@ pub fn Where(comptime Head: type) type {
         }
 
         fn sqlPart(part: anytype, buf: *std.ArrayList(u8)) !void {
-            if (comptime @hasDecl(@TypeOf(part), "sql")) {
+            const T = @TypeOf(part);
+
+            if (comptime @hasDecl(T, "sql")) {
                 return part.sql(buf);
             }
 
-            try part[0].sql(buf);
-            try buf.appendSlice(part[1]);
-            try sqlPart(part[2], buf);
+            if (comptime @typeInfo(T) == .Struct and @typeInfo(T).Struct.fields.len == 3) {
+                try sqlPart(part[0], buf);
+                try buf.appendSlice(part[1]);
+                try sqlPart(part[2], buf);
+            } else {
+                inline for (@typeInfo(T).Struct.fields) |f| {
+                    try buf.appendSlice(comptime f.name ++ " = ?");
+                }
+            }
         }
 
         pub fn Cons(comptime T: type) type {
@@ -131,16 +139,16 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
         frm: From,
         whr: W,
 
-        pub fn from(self: *const @This(), table_name: []const u8) Query(T, table_name, W) {
-            return .{ .whr = self.whr };
+        pub fn from(self: *const @This(), frm: anytype) Query(T, @TypeOf(frm), W) {
+            return .{ .frm = frm, .whr = self.whr };
         }
 
-        pub fn where(self: *const @This(), criteria: anytype) Query(T, From, W.AndWhere(@TypeOf(criteria))) {
-            return .{ .whr = self.whr.andWhere(criteria) };
+        pub fn where(self: *const @This(), criteria: anytype) Query(T, From, W.Cons(@TypeOf(criteria))) {
+            return .{ .frm = self.frm, .whr = self.whr.andWhere(criteria) };
         }
 
-        pub fn orWhere(self: *const @This(), criteria: anytype) Query(T, From, W.OrWhere(@TypeOf(criteria))) {
-            return .{ .whr = self.whr.orWhere(criteria) };
+        pub fn orWhere(self: *const @This(), criteria: anytype) Query(T, From, W.Cons(@TypeOf(criteria))) {
+            return .{ .frm = self.frm, .whr = self.whr.orWhere(criteria) };
         }
 
         pub fn orderBy(_: *const @This(), _: anytype) Query(T, From, W) {
@@ -148,24 +156,9 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
         }
 
         pub fn sql(self: *const @This(), buf: *std.ArrayList(u8)) !void {
-            const zst = comptime @sizeOf(@This()) == 0;
-            try buf.appendSlice(comptime brk: {
-                var res: []const u8 = "SELECT " ++ fields(T) ++ " FROM ";
-                if (zst) {
-                    var mem: [1024]u8 = undefined;
-                    var fba = std.heap.FixedBufferAllocator.init(&mem);
-                    var buf2 = std.ArrayList(u8).init(fba.allocator());
-                    try From.sql(undefined, &buf2);
-                    try W.sql(undefined, &buf2);
-                    res = res ++ buf2.items;
-                }
-                break :brk res;
-            });
-
-            if (comptime !zst) {
-                try self.frm.sql(buf);
-                try self.whr.sql(buf);
-            }
+            try buf.appendSlice(comptime "SELECT " ++ fields(T) ++ " FROM ");
+            try self.frm.sql(buf);
+            try self.whr.sql(buf);
         }
     };
 }
@@ -202,11 +195,11 @@ pub fn Update(comptime T: type, comptime tbl: []const u8, comptime W: type, comp
             return .{ .whr = self.whr };
         }
 
-        pub fn where(self: *const @This(), criteria: anytype) Update(T, tbl, W.AndWhere(@TypeOf(criteria)), V) {
+        pub fn where(self: *const @This(), criteria: anytype) Update(T, tbl, W.Cons(@TypeOf(criteria)), V) {
             return .{ .whr = self.whr.andWhere(criteria), .data = self.data };
         }
 
-        pub fn orWhere(self: *const @This(), criteria: anytype) Update(T, tbl, W.OrWhere(@TypeOf(criteria)), V) {
+        pub fn orWhere(self: *const @This(), criteria: anytype) Update(T, tbl, W.Cons(@TypeOf(criteria)), V) {
             return .{ .whr = self.whr.orWhere(criteria), .data = self.data };
         }
 
@@ -215,9 +208,8 @@ pub fn Update(comptime T: type, comptime tbl: []const u8, comptime W: type, comp
         }
 
         pub fn sql(self: *const @This(), buf: *std.ArrayList(u8)) !void {
-            try buf.appendSlice(comptime "UPDATE " ++ tbl);
+            try buf.appendSlice(comptime "UPDATE " ++ tbl ++ " SET " ++ setters(V));
             try self.whr.sql(buf);
-            try buf.appendSlice(comptime " SET " ++ setters(V));
         }
 
         // TODO: bind
@@ -234,11 +226,11 @@ pub fn Delete(comptime T: type, comptime tbl: []const u8, comptime W: type) type
             return .{ .whr = self.whr };
         }
 
-        pub fn where(self: *const @This(), criteria: anytype) Delete(T, tbl, W.AndWhere(@TypeOf(criteria))) {
+        pub fn where(self: *const @This(), criteria: anytype) Delete(T, tbl, W.Cons(@TypeOf(criteria))) {
             return .{ .whr = self.whr.andWhere(criteria) };
         }
 
-        pub fn orWhere(self: *const @This(), criteria: anytype) Delete(T, tbl, W.OrWhere(@TypeOf(criteria))) {
+        pub fn orWhere(self: *const @This(), criteria: anytype) Delete(T, tbl, W.Cons(@TypeOf(criteria))) {
             return .{ .whr = self.whr.orWhere(criteria) };
         }
 
@@ -281,17 +273,41 @@ test "where" {
 
 test "query" {
     try expectSql(query(Person), "SELECT id, name, age FROM Person");
+
+    try expectSql(
+        query(Person).where(.{ .name = "Alice" }),
+        "SELECT id, name, age FROM Person WHERE name = ?",
+    );
+
+    try expectSql(
+        query(Person).where(.{ .name = "Alice" }).orWhere(.{ .age = @as(usize, 20) }),
+        "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
+    );
 }
 
 test "insert" {
     try expectSql(insert(Person), "INSERT INTO Person() VALUES ()");
-    try expectSql(insert(Person).values(.{ .name = "Alice", .age = 20 }), "INSERT INTO Person(name, age) VALUES (?, ?)");
+
+    try expectSql(
+        insert(Person).values(.{ .name = "Alice", .age = 20 }),
+        "INSERT INTO Person(name, age) VALUES (?, ?)",
+    );
 }
 
 test "update" {
     try expectSql(update(Person).set(.{ .name = "Alice" }), "UPDATE Person SET name = ?");
+
+    try expectSql(
+        update(Person).set(.{ .name = "Alice" }).where(.{ .age = 20 }),
+        "UPDATE Person SET name = ? WHERE age = ?",
+    );
 }
 
 test "delete" {
     try expectSql(delete(Person), "DELETE FROM Person");
+
+    try expectSql(
+        delete(Person).where(.{ .age = 20 }),
+        "DELETE FROM Person WHERE age = ?",
+    );
 }
