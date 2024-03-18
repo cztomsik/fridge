@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) !void {
                 .needed = false,
                 .weak = false,
                 .use_pkg_config = .yes,
-                .preferred_link_mode = .Dynamic,
+                .preferred_link_mode = .dynamic,
                 .search_strategy = .paths_first,
             },
         });
