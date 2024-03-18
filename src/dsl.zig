@@ -88,15 +88,11 @@ pub fn Where(comptime Head: type) type {
         head: Head,
 
         pub fn andWhere(self: *const @This(), part: anytype) Cons(@TypeOf(part)) {
-            if (comptime Head == void) return .{ .head = part };
-
-            return .{ .head = .{ self.head, " AND ", part } };
+            return cons(self, " AND ", part);
         }
 
         pub fn orWhere(self: *const @This(), part: anytype) Cons(@TypeOf(part)) {
-            if (comptime Head == void) return .{ .head = part };
-
-            return .{ .head = .{ self.head, " OR ", part } };
+            return cons(self, " OR ", part);
         }
 
         pub fn sql(self: *const @This(), buf: *std.ArrayList(u8)) !void {
@@ -128,6 +124,12 @@ pub fn Where(comptime Head: type) type {
             if (Head == void) return Where(T);
 
             return Where(struct { Head, []const u8, T });
+        }
+
+        fn cons(self: *const @This(), op: []const u8, part: anytype) Cons(@TypeOf(part)) {
+            if (comptime Head == void) return .{ .head = part };
+
+            return .{ .head = .{ self.head, op, part } };
         }
     };
 }
