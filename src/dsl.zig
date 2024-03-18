@@ -7,22 +7,22 @@ pub fn raw(comptime sql: []const u8, bindings: anytype) Raw(sql, @TypeOf(binding
 
 /// Create select query.
 pub fn query(comptime T: type) Query(T, Raw(tableName(T), void), Where(void)) {
-    return undefined;
+    return .{ .frm = undefined, .whr = undefined };
 }
 
 /// Create an insert query.
 pub fn insert(comptime T: type) Insert(T, tableName(T), struct {}) {
-    return undefined;
+    return undefined; // ZST
 }
 
 /// Create an update query.
 pub fn update(comptime T: type) Update(T, tableName(T), Where(void), struct {}) {
-    return undefined;
+    return undefined; // ZST
 }
 
 /// Create a delete query.
 pub fn delete(comptime T: type) Delete(T, tableName(T), Where(void)) {
-    return undefined;
+    return undefined; // ZST
 }
 
 fn tableName(comptime T: type) []const u8 {
@@ -175,6 +175,7 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
 
         frm: From,
         whr: W,
+        ord: ?[]const u8 = null,
 
         pub fn from(self: *const @This(), frm: anytype) Query(T, @TypeOf(frm), W) {
             return .{ .frm = frm, .whr = self.whr };
@@ -188,14 +189,27 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
             return .{ .frm = self.frm, .whr = self.whr.orWhere(criteria) };
         }
 
-        pub fn orderBy(_: *const @This(), _: anytype) Query(T, From, W) {
-            @panic("TODO");
+        pub fn orderBy(self: *const @This(), col: std.meta.FieldEnum(T), ord: enum { asc, desc }) Query(T, From, W) {
+            return self.orderByRaw(switch (col) {
+                inline else => |c| switch (ord) {
+                    inline else => |o| @tagName(c) ++ " " ++ @tagName(o),
+                },
+            });
+        }
+
+        pub fn orderByRaw(self: *const @This(), order_by: []const u8) Query(T, From, W) {
+            return .{ .frm = self.frm, .whr = self.whr, .ord = order_by };
         }
 
         pub fn sql(self: *const @This(), buf: *std.ArrayList(u8)) !void {
             try buf.appendSlice(comptime "SELECT " ++ fields(T) ++ " FROM ");
             try self.frm.sql(buf);
             try self.whr.sql(buf);
+
+            if (self.ord) |ord| {
+                try buf.appendSlice(" ORDER BY ");
+                try buf.appendSlice(ord);
+            }
         }
 
         pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
@@ -340,6 +354,11 @@ test "query" {
     try expectSql(
         query(Person).where(.{ .name = "Alice" }).orWhere(.{ .age = 20 }),
         "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
+    );
+
+    try expectSql(
+        query(Person).orderBy(.name, .asc),
+        "SELECT id, name, age FROM Person ORDER BY name asc",
     );
 }
 
