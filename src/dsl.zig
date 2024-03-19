@@ -122,8 +122,8 @@ pub fn Where(comptime Head: type) type {
                 try buf.appendSlice(part[1]);
                 try sqlPart(part[2], buf);
             } else {
-                inline for (@typeInfo(T).Struct.fields) |f| {
-                    try buf.appendSlice(comptime f.name ++ " = ?");
+                inline for (@typeInfo(T).Struct.fields, 0..) |f, i| {
+                    try buf.appendSlice(comptime (if (i > 0) " AND " else "") ++ f.name ++ " = ?");
                 }
             }
         }
