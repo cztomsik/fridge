@@ -10,7 +10,8 @@ pub const migrate = @import("migrate.zig").migrate;
 /// Convenience wrapper for a blob of data.
 pub const Blob = struct { []const u8 };
 
-/// A SQLite database connection.
+/// Low-level SQLite database connection. It's main purpose is to provide a
+/// way to prepare statements.
 pub const SQLite3 = struct {
     db: *c.sqlite3,
 
@@ -38,110 +39,18 @@ pub const SQLite3 = struct {
         try check(c.sqlite3_busy_timeout(self.db, @intCast(ms)));
     }
 
-    /// Shorthand for inserting a row into the given table. The row must be a
-    /// struct with fields matching the columns of the table.
-    pub fn insert(self: *SQLite3, comptime table_name: []const u8, row: anytype) !void {
-        comptime var fields: []const u8 = "";
-        comptime var placeholders: []const u8 = "";
-
-        inline for (std.meta.fields(@TypeOf(row)), 0..) |f, i| {
-            if (i > 0) {
-                fields = fields ++ ", ";
-                placeholders = placeholders ++ ", ";
-            }
-
-            fields = fields ++ f.name;
-            placeholders = placeholders ++ "?";
-        }
-
-        try self.exec("INSERT INTO " ++ table_name ++ "(" ++ fields ++ ") VALUES (" ++ placeholders ++ ")", row);
-    }
-
-    /// Shorthand for updating a row in the given table. The row must be a
-    /// struct with fields matching the columns of the table. The `id` field
-    /// must be set to the ID of the row to update.
-    pub fn update(self: *SQLite3, comptime table_name: []const u8, row: anytype) !void {
-        comptime var fields: []const u8 = "";
-
-        inline for (std.meta.fields(@TypeOf(row))) |f| {
-            if (std.mem.eql(u8, f.name, "id")) continue;
-            if (fields.len > 0) fields = fields ++ ", ";
-            fields = fields ++ f.name ++ " = ?";
-        }
-
-        try self.exec("UPDATE " ++ table_name ++ " SET " ++ fields ++ " WHERE id = ?", row.id);
-    }
-
-    /// Executes the given SQL, ignoring any rows it returns.
-    pub fn exec(self: *SQLite3, sql: []const u8, args: anytype) !void {
-        var stmt = try self.query(sql, args);
-        defer stmt.deinit();
-
-        try stmt.exec();
-    }
-
+    /// Executes all the SQL statements in the given string, ignoring any rows
+    /// they return.
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {
         var next = std.mem.trimRight(u8, sql, " \n\t");
 
         while (true) {
-            var stmt = try self.query(next, .{});
+            var stmt = try self.prepare(next);
             defer stmt.deinit();
 
             try stmt.exec();
             next = stmt.tail orelse return;
         }
-    }
-
-    /// Returns the number of rows affected by the last INSERT, UPDATE or
-    /// DELETE statement.
-    pub fn rowsAffected(self: *SQLite3) !usize {
-        return @intCast(c.sqlite3_changes(self.db));
-    }
-
-    /// Shorthand for `self.query(sql, args).read(T)` where `T` is a primitive
-    /// type. Returns the first column of the first row returned by the query.
-    pub fn get(self: *SQLite3, comptime T: type, sql: []const u8, args: anytype) !T {
-        var stmt = try self.query(sql, args);
-        defer stmt.deinit();
-
-        if (comptime !isPrimitive(T)) @compileError("Only primitive types are supported");
-
-        return stmt.read(T);
-    }
-
-    /// Shorthand for `self.query(sql, args).readAlloc(allocator, T)`.
-    /// Allocated memory needs to be freed by the caller.
-    pub fn getAlloc(self: *SQLite3, allocator: std.mem.Allocator, comptime T: type, sql: []const u8, args: anytype) !T {
-        var stmt = try self.query(sql, args);
-        defer stmt.deinit();
-
-        return stmt.readAlloc(allocator, T);
-    }
-
-    /// Shorthand for `self.query(sql, args).readAll(allocator, T)`.
-    /// Allocated memory needs to be freed by the caller.
-    pub fn getAll(self: *SQLite3, allocator: std.mem.Allocator, comptime T: type, sql: []const u8, args: anytype) ![]const T {
-        var stmt = try self.query(sql, args);
-        defer stmt.deinit();
-
-        return stmt.readAll(allocator, T);
-    }
-
-    /// Shorthand for `self.getAlloc(allocator, [:0]const u8, sql, args)`.
-    /// Allocated memory needs to be freed by the caller.
-    pub fn getString(self: *SQLite3, allocator: std.mem.Allocator, sql: []const u8, args: anytype) ![:0]const u8 {
-        var stmt = try self.query(sql, args);
-        defer stmt.deinit();
-
-        return stmt.readAlloc(allocator, [:0]const u8);
-    }
-
-    /// Shorthand for `self.prepare(sql).bindAll(args)`. Returns the prepared
-    /// statement which still needs to be executed (and deinitialized).
-    pub fn query(self: *SQLite3, sql: []const u8, args: anytype) !Statement {
-        var stmt = try self.prepare(sql);
-        try stmt.bindAll(args);
-        return stmt;
     }
 
     /// Creates a prepared statement from the given SQL.
@@ -161,9 +70,22 @@ pub const SQLite3 = struct {
             .tail = if (tail != null and tail != sql.ptr + sql.len) sql[@intFromPtr(tail) - @intFromPtr(sql.ptr) ..] else null,
         };
     }
+
+    /// Returns the row ID of the most recent successful INSERT into the
+    /// database.
+    pub fn lastInsertRowId(self: *SQLite3) !i64 {
+        return c.sqlite3_last_insert_rowid(self.db);
+    }
+
+    /// Returns the number of rows affected by the last INSERT, UPDATE or
+    /// DELETE statement.
+    pub fn rowsAffected(self: *SQLite3) !usize {
+        return @intCast(c.sqlite3_changes(self.db));
+    }
 };
 
-/// A prepared statement.
+/// A prepared statement. This is a low-level interface which keeps the SQLite
+/// locked until the `deinit()` or `reset()` is called.
 pub const Statement = struct {
     stmt: *c.sqlite3_stmt,
     sql: []const u8,
@@ -202,74 +124,9 @@ pub const Statement = struct {
         });
     }
 
-    /// Binds the given arguments to the prepared statement.
-    /// Works with both structs and tuples.
-    pub fn bindAll(self: *Statement, args: anytype) !void {
-        inline for (std.meta.fields(@TypeOf(args)), 0..) |f, i| {
-            try self.bind(i, @field(args, f.name));
-        }
-    }
-
     /// Executes the prepared statement, ignoring any rows it returns.
     pub fn exec(self: *Statement) !void {
         while (try self.step() != .done) {}
-    }
-
-    /// Reads the next row, either into a struct/tuple or a single value from
-    /// the first column. Returns `error.NoRows` if there are no more rows.
-    pub fn read(self: *Statement, comptime T: type) !T {
-        return try self.readNext(T) orelse error.NoRows;
-    }
-
-    /// Reads the next row, either into a struct/tuple or a single value from
-    /// the first column. Returns `null` if there are no more rows.
-    pub fn readNext(self: *Statement, comptime T: type) !?T {
-        if (try self.step() != .row) return null;
-
-        if (comptime @typeInfo(T) == .Struct) {
-            var res: T = undefined;
-
-            inline for (std.meta.fields(T), 0..) |f, i| {
-                @field(res, f.name) = try self.column(f.type, i);
-            }
-
-            return res;
-        }
-
-        return try self.column(T, 0);
-    }
-
-    // Like `read`, but allocates the result using the given allocator.
-    // The allocated memory needs to be freed by the caller.
-    pub fn readAlloc(self: *Statement, allocator: std.mem.Allocator, comptime T: type) !T {
-        return try self.readNextAlloc(allocator, T) orelse error.NoRows;
-    }
-
-    // Like `readNext`, but allocates the result using the given allocator.
-    // The allocated memory needs to be freed by the caller.
-    pub fn readNextAlloc(self: *Statement, allocator: std.mem.Allocator, comptime T: type) !?T {
-        return try dupe(allocator, T, try self.readNext(T) orelse return null);
-    }
-
-    // Reads all rows into a slice, allocating each row using the given allocator.
-    // The allocated memory needs to be freed by the caller.
-    pub fn readAll(self: *Statement, allocator: std.mem.Allocator, comptime T: type) ![]T {
-        var rows = std.ArrayList(T).init(allocator);
-
-        while (try self.readNextAlloc(allocator, T)) |row| {
-            try rows.append(row);
-        }
-
-        return rows.toOwnedSlice();
-    }
-
-    /// Returns an iterator over the rows returned by the prepared statement.
-    /// Only useful if you need iterator with argless `next()` and fixed return
-    /// type.
-    pub fn iterator(self: *Statement, comptime T: type) RowIterator(T) {
-        return .{
-            .stmt = self,
-        };
     }
 
     /// Gets the value of the given column.
@@ -323,17 +180,6 @@ pub const Statement = struct {
     }
 };
 
-/// A generic iterator over the rows returned by a prepared statement.
-pub fn RowIterator(comptime T: type) type {
-    return struct {
-        stmt: *Statement,
-
-        pub fn next(self: *@This()) !?T {
-            return self.stmt.readNext(T);
-        }
-    };
-}
-
 pub fn check(code: c_int) !void {
     const SQLiteError = error{
         SQLITE_ABORT,
@@ -383,33 +229,4 @@ pub fn check(code: c_int) !void {
             return error.SQLiteError;
         },
     }
-}
-
-fn isPrimitive(comptime T: type) bool {
-    return switch (@typeInfo(T)) {
-        .Int, .Float, .Bool => true,
-        .Optional => |o| isPrimitive(o.child),
-        else => false,
-    };
-}
-
-fn dupe(allocator: std.mem.Allocator, comptime T: type, row: T) std.mem.Allocator.Error!T {
-    return switch (T) {
-        Blob => Blob{try allocator.dupe(u8, row)},
-        []const u8 => allocator.dupe(u8, row),
-        [:0]const u8 => allocator.dupeZ(u8, row),
-        else => switch (@typeInfo(T)) {
-            .Optional => |o| try dupe(allocator, o.child, row orelse return null),
-            .Struct => |s| {
-                var copy = row;
-
-                inline for (s.fields) |f| {
-                    @field(copy, f.name) = try dupe(allocator, f.type, @field(row, f.name));
-                }
-
-                return copy;
-            },
-            else => row,
-        },
-    };
 }
