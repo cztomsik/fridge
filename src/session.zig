@@ -10,7 +10,7 @@ pub const Session = struct {
     buf: std.ArrayList(u8),
 
     /// Create a new session from a connection.
-    pub fn fromConn(arena: std.mem.Allocator, conn: sqlite.SQLite3) !Session {
+    pub fn fromConnection(arena: std.mem.Allocator, conn: sqlite.SQLite3) Session {
         return .{
             .arena = arena,
             .conn = conn,
@@ -19,8 +19,8 @@ pub const Session = struct {
     }
 
     /// Create a new session from a pool.
-    pub fn fromPool(arena: std.mem.Allocator, pool: *Pool) !Session {
-        var session = try fromConn(arena, pool.get());
+    pub fn fromPool(arena: std.mem.Allocator, pool: *Pool) Session {
+        var session = fromConnection(arena, pool.get());
         session.pool = pool;
         return session;
     }
@@ -36,6 +36,10 @@ pub const Session = struct {
 
     /// Prepare a query into a statement.
     pub fn prepare(self: *Session, queryable: anytype) !sqlite.Statement {
+        if (comptime isString(@TypeOf(queryable))) {
+            return self.conn.prepare(queryable);
+        }
+
         defer self.buf.clearRetainingCapacity();
         try queryable.sql(&self.buf);
 
@@ -72,24 +76,24 @@ pub const Session = struct {
 
     /// Find a record by its primary key.
     pub fn find(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !T {
-        return self.findBy(T, .{ .id = id });
+        return try self.findBy(T, .{ .id = id }) orelse error.NotFound;
     }
 
     /// Find a record matching the given criteria.
-    pub fn findBy(self: *Session, comptime T: type, criteria: anytype) !T {
+    pub fn findBy(self: *Session, comptime T: type, criteria: anytype) !?T {
         return self.findOne(dsl.query(T).where(criteria));
     }
 
     /// Return the first record for the given query.
-    pub fn findOne(self: *Session, query: anytype) !@TypeOf(query).Row {
+    pub fn findOne(self: *Session, query: anytype) !?@TypeOf(query).Row {
         var stmt = try self.prepare(query);
         defer stmt.deinit();
 
         if (try stmt.step() == .done) {
-            return error.NotFound;
+            return null;
         }
 
-        return self.readRow(@TypeOf(query).Row, &stmt);
+        return try self.readRow(@TypeOf(query).Row, &stmt);
     }
 
     /// Return all records for the given query.
@@ -133,3 +137,13 @@ pub const Session = struct {
         };
     }
 };
+
+fn isString(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .Pointer => |ptr| ptr.child == u8 or switch (@typeInfo(ptr.child)) {
+            .Array => |arr| arr.child == u8,
+            else => false,
+        },
+        else => false,
+    };
+}
