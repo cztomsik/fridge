@@ -3,8 +3,8 @@ const std = @import("std");
 pub fn build(b: *std.Build) !void {
     const bundle = b.option(bool, "bundle", "Bundle SQLite") orelse false;
 
-    const sqlite = b.addModule("ava-sqlite", .{
-        .root_source_file = .{ .path = "src/sqlite.zig" },
+    const sqlite = b.addModule("fridge", .{
+        .root_source_file = .{ .path = "src/main.zig" },
     });
     sqlite.link_libc = true;
 
