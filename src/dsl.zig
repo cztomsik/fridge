@@ -84,12 +84,9 @@ pub fn Raw(comptime raw_sql: []const u8, comptime T: type) type {
         pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
             if (comptime T == void) return;
 
-            // TODO: another segfault in zig compiler
-            // inline for (@typeInfo(T).Struct.fields) |f| {
-            // try stmt.bind(counter.*, @field(self.bindings, f.name));
-            try stmt.bind(counter.*, self.bindings);
-            counter.* += 1;
-            // }
+            inline for (@typeInfo(T).Struct.fields) |f| {
+                try stmt.bind(counter.*, @field(self.bindings, f.name));
+            }
         }
     };
 }
@@ -164,7 +161,7 @@ pub fn Where(comptime Head: type) type {
         fn cons(self: *const @This(), op: []const u8, part: anytype) Cons(@TypeOf(part)) {
             if (comptime Head == void) return .{ .head = part };
 
-            return .{ .head = .{ self.head, op, part } };
+            return Cons(@TypeOf(part)){ .head = .{ self.head, op, part } };
         }
     };
 }
@@ -331,8 +328,8 @@ const Person = struct {
 
 test "where" {
     const where: Where(void) = undefined;
-    const name = raw("name = ?", "Alice");
-    const age = raw("age = ?", @as(usize, 20));
+    const name = raw("name = ?", .{"Alice"});
+    const age = raw("age = ?", .{20});
 
     try expectSql(where, "");
 
