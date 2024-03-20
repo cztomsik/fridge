@@ -15,7 +15,7 @@ pub const Pool = struct {
     /// Initialize a connection pool with `count` connections opened to the
     /// sqlite database at `filename`.
     pub fn init(allocator: std.mem.Allocator, filename: [*:0]const u8, count: usize) !Pool {
-        const conns = try allocator.alloc(sqlite.SQLite3, 10);
+        const conns = try allocator.alloc(sqlite.SQLite3, count);
         errdefer allocator.free(conns);
 
         for (0..count) |i| {
