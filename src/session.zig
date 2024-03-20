@@ -63,11 +63,11 @@ pub const Session = struct {
     /// Create a new record.
     pub fn create(self: *Session, comptime T: type, data: anytype) !T {
         try self.exec(dsl.insert(T).values(data));
-        return self.find(T, @intCast(try self.conn.lastInsertRowId()));
+        return try self.find(T, @intCast(try self.conn.lastInsertRowId())) orelse @panic("concurrent write");
     }
 
     /// Update a record by its primary key
-    pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !T {
+    pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !?T {
         try self.exec(dsl.update(T).set(data).where(.{ .id = id }));
         return self.find(T, id);
     }
@@ -78,8 +78,8 @@ pub const Session = struct {
     }
 
     /// Find a record by its primary key.
-    pub fn find(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !T {
-        return try self.findBy(T, .{ .id = id }) orelse error.NotFound;
+    pub fn find(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !?T {
+        return try self.findBy(T, .{ .id = id });
     }
 
     /// Find a record matching the given criteria.
