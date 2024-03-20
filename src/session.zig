@@ -43,10 +43,13 @@ pub const Session = struct {
         defer self.buf.clearRetainingCapacity();
         try queryable.sql(&self.buf);
 
-        var i: usize = 0;
-        var stmt = try self.conn.prepare(self.buf.items);
-        try queryable.bind(&stmt, &i);
-        return stmt;
+        var binder = Binder{
+            .arena = self.arena,
+            .stmt = try self.conn.prepare(self.buf.items),
+        };
+
+        try queryable.bind(&binder);
+        return binder.stmt;
     }
 
     /// Execute a query.
@@ -114,8 +117,16 @@ pub const Session = struct {
     fn readRow(self: *Session, comptime T: type, stmt: *sqlite.Statement) !T {
         var res: T = undefined;
 
-        // TODO: json deserialization
         inline for (std.meta.fields(@TypeOf(res)), 0..) |f, i| {
+            if (comptime @typeInfo(f.type) == .Struct) {
+                @field(res, f.name) = try std.json.parseFromSliceLeaky(
+                    f.type,
+                    self.arena,
+                    try stmt.column([]const u8, i),
+                    .{},
+                );
+            }
+
             @field(res, f.name) = try self.dupe(
                 try stmt.column(f.type, i),
             );
@@ -135,6 +146,29 @@ pub const Session = struct {
                 else => value,
             },
         };
+    }
+};
+
+const Binder = struct {
+    arena: std.mem.Allocator,
+    stmt: sqlite.Statement,
+    i: usize = 0,
+
+    pub fn bind(self: *Binder, value: anytype) !void {
+        defer self.i += 1;
+
+        if (comptime @typeInfo(@TypeOf(value)) == .Struct) {
+            return self.stmt.bind(
+                try std.json.stringifyAlloc(
+                    self.arena,
+                    value,
+                    .{},
+                ),
+                self.i,
+            );
+        }
+
+        try self.stmt.bind(self.i, value);
     }
 };
 

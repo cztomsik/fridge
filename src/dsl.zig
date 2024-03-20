@@ -81,11 +81,11 @@ pub fn Raw(comptime raw_sql: []const u8, comptime T: type) type {
             try buf.appendSlice(raw_sql);
         }
 
-        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+        pub fn bind(self: *const @This(), binder: anytype) !void {
             if (comptime T == void) return;
 
             inline for (@typeInfo(T).Struct.fields) |f| {
-                try stmt.bind(counter.*, @field(self.bindings, f.name));
+                try binder.bind(@field(self.bindings, f.name));
             }
         }
     };
@@ -128,26 +128,25 @@ pub fn Where(comptime Head: type) type {
             }
         }
 
-        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+        pub fn bind(self: *const @This(), binder: anytype) !void {
             if (comptime Head == void) return;
 
-            try bindPart(self.head, stmt, counter);
+            try bindPart(self.head, binder);
         }
 
-        fn bindPart(part: anytype, stmt: anytype, counter: *usize) !void {
+        fn bindPart(part: anytype, binder: anytype) !void {
             const T = @TypeOf(part);
 
             if (comptime @hasDecl(T, "bind")) {
-                return part.bind(stmt, counter);
+                return part.bind(binder);
             }
 
             if (comptime @typeInfo(T) == .Struct and @typeInfo(T).Struct.fields.len == 3) {
-                try bindPart(part[0], stmt, counter);
-                try bindPart(part[2], stmt, counter);
+                try bindPart(part[0], binder);
+                try bindPart(part[2], binder);
             } else {
                 inline for (@typeInfo(T).Struct.fields) |f| {
-                    try stmt.bind(counter.*, @field(part, f.name));
-                    counter.* += 1;
+                    try binder.bind(@field(part, f.name));
                 }
             }
         }
@@ -209,9 +208,9 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
             }
         }
 
-        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
-            try self.frm.bind(stmt, counter);
-            try self.whr.bind(stmt, counter);
+        pub fn bind(self: *const @This(), binder: anytype) !void {
+            try self.frm.bind(binder);
+            try self.whr.bind(binder);
         }
     };
 }
@@ -235,10 +234,9 @@ pub fn Insert(comptime T: type, comptime into: []const u8, comptime V: type) typ
             try builder.push(self.data);
         }
 
-        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+        pub fn bind(self: *const @This(), binder: anytype) !void {
             inline for (@typeInfo(V).Struct.fields) |f| {
-                try stmt.bind(counter.*, @field(self.data, f.name));
-                counter.* += 1;
+                try binder.bind(@field(self.data, f.name));
             }
         }
     };
@@ -272,13 +270,12 @@ pub fn Update(comptime T: type, comptime tbl: []const u8, comptime W: type, comp
             try self.whr.sql(buf);
         }
 
-        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
+        pub fn bind(self: *const @This(), binder: anytype) !void {
             inline for (@typeInfo(V).Struct.fields) |f| {
-                try stmt.bind(counter.*, @field(self.data, f.name));
-                counter.* += 1;
+                try binder.bind(@field(self.data, f.name));
             }
 
-            try self.whr.bind(stmt, counter);
+            try self.whr.bind(binder);
         }
     };
 }
@@ -306,8 +303,8 @@ pub fn Delete(comptime T: type, comptime tbl: []const u8, comptime W: type) type
             try self.whr.sql(buf);
         }
 
-        pub fn bind(self: *const @This(), stmt: anytype, counter: *usize) !void {
-            try self.whr.bind(stmt, counter);
+        pub inline fn bind(self: *const @This(), binder: anytype) !void {
+            try self.whr.bind(binder);
         }
     };
 }
