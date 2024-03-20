@@ -125,6 +125,7 @@ pub const Session = struct {
                     try stmt.column([]const u8, i),
                     .{},
                 );
+                continue;
             }
 
             @field(res, f.name) = try self.dupe(
@@ -159,12 +160,12 @@ const Binder = struct {
 
         if (comptime @typeInfo(@TypeOf(value)) == .Struct) {
             return self.stmt.bind(
+                self.i,
                 try std.json.stringifyAlloc(
                     self.arena,
                     value,
                     .{},
                 ),
-                self.i,
             );
         }
 
