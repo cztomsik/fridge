@@ -1,6 +1,6 @@
 .{
-    .name = "ava-sqlite",
-    .version = "0.9.0",
+    .name = "fridge",
+    .version = "0.9.5",
 
     .paths = .{
         "build.zig",
