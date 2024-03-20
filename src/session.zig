@@ -36,7 +36,7 @@ pub const Session = struct {
 
     /// Prepare a query into a statement.
     pub fn prepare(self: *Session, queryable: anytype) !sqlite.Statement {
-        if (comptime isString(@TypeOf(queryable))) {
+        if (comptime dsl.isString(@TypeOf(queryable))) {
             return self.conn.prepare(queryable);
         }
 
@@ -171,13 +171,3 @@ const Binder = struct {
         try self.stmt.bind(self.i, value);
     }
 };
-
-fn isString(comptime T: type) bool {
-    return switch (@typeInfo(T)) {
-        .Pointer => |ptr| ptr.child == u8 or switch (@typeInfo(ptr.child)) {
-            .Array => |arr| arr.child == u8,
-            else => false,
-        },
-        else => false,
-    };
-}

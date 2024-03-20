@@ -20,6 +20,9 @@ pub const Pool = struct {
 
         for (0..count) |i| {
             conns[i] = try sqlite.SQLite3.open(filename);
+
+            // TODO: make this configurable
+            try conns[i].setBusyTimeout(1_000);
         }
 
         return .{

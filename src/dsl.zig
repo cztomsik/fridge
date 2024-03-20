@@ -66,7 +66,6 @@ fn setters(comptime T: type) []const u8 {
         for (@typeInfo(T).Struct.fields) |f| {
             if (res.len > 0) res = res ++ ", ";
             res = res ++ f.name ++ " = ?";
-            break :brk res;
         }
 
         break :brk res;
@@ -222,7 +221,8 @@ pub fn Insert(comptime T: type, comptime into: []const u8, comptime V: type) typ
         data: V,
 
         pub fn values(_: *const @This(), data: anytype) Insert(T, into, @TypeOf(data)) {
-            // TODO: comptime checkFields(Payload(T), @TypeOf(data))
+            comptime checkFields(T, @TypeOf(data));
+
             return .{ .data = data };
         }
 
@@ -262,6 +262,8 @@ pub fn Update(comptime T: type, comptime tbl: []const u8, comptime W: type, comp
         }
 
         pub fn set(self: *const @This(), data: anytype) Update(T, tbl, W, @TypeOf(data)) {
+            comptime checkFields(T, @TypeOf(data));
+
             return .{ .whr = self.whr, .data = data };
         }
 
@@ -306,6 +308,48 @@ pub fn Delete(comptime T: type, comptime tbl: []const u8, comptime W: type) type
         pub inline fn bind(self: *const @This(), binder: anytype) !void {
             try self.whr.bind(binder);
         }
+    };
+}
+
+fn checkFields(comptime T: type, comptime D: type) void {
+    comptime {
+        outer: for (@typeInfo(D).Struct.fields) |f| {
+            for (@typeInfo(T).Struct.fields) |f2| {
+                if (std.mem.eql(u8, f.name, f2.name)) {
+                    if (f.type == f2.type) {
+                        continue :outer;
+                    }
+
+                    if (isString(f.type) and isString(f2.type)) {
+                        continue :outer;
+                    }
+
+                    switch (@typeInfo(f.type)) {
+                        .ComptimeInt => if (@typeInfo(f2.type) == .Int) continue :outer,
+                        .ComptimeFloat => if (@typeInfo(f2.type) == .Float) continue :outer,
+                        else => {},
+                    }
+
+                    @compileError(
+                        "Type mismatch for field " ++ f.name ++
+                            " found:" ++ @typeName(f.type) ++
+                            " expected:" ++ @typeName(f2.type),
+                    );
+                }
+            }
+
+            @compileError("Unknown field " ++ f.name);
+        }
+    }
+}
+
+pub fn isString(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .Pointer => |ptr| ptr.child == u8 or switch (@typeInfo(ptr.child)) {
+            .Array => |arr| arr.child == u8,
+            else => false,
+        },
+        else => false,
     };
 }
 
@@ -376,6 +420,11 @@ test "update" {
     try expectSql(
         update(Person).set(.{ .name = "Alice" }).where(.{ .age = 20 }).orWhere(.{ .name = "Bob" }),
         "UPDATE Person SET name = ? WHERE age = ? OR name = ?",
+    );
+
+    try expectSql(
+        update(Person).set(.{ .name = "Alice", .age = 21 }).where(.{ .age = 20 }),
+        "UPDATE Person SET name = ?, age = ? WHERE age = ?",
     );
 }
 
