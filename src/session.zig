@@ -67,9 +67,8 @@ pub const Session = struct {
     }
 
     /// Update a record by its primary key
-    pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !?T {
+    pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !void {
         try self.exec(dsl.update(T).set(data).where(.{ .id = id }));
-        return self.find(T, id);
     }
 
     /// Delete a record by its primary key.
