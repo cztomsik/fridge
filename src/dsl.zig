@@ -171,17 +171,18 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
         frm: From,
         whr: W,
         ord: ?[]const u8 = null,
+        lim: ?u32 = null,
 
         pub fn from(self: *const @This(), frm: anytype) Query(T, @TypeOf(frm), W) {
-            return .{ .frm = frm, .whr = self.whr };
+            return .{ .frm = frm, .whr = self.whr, .ord = self.ord, .lim = self.lim };
         }
 
         pub fn where(self: *const @This(), criteria: anytype) Query(T, From, W.Cons(@TypeOf(criteria))) {
-            return .{ .frm = self.frm, .whr = self.whr.andWhere(criteria) };
+            return .{ .frm = self.frm, .whr = self.whr.andWhere(criteria), .ord = self.ord, .lim = self.lim };
         }
 
         pub fn orWhere(self: *const @This(), criteria: anytype) Query(T, From, W.Cons(@TypeOf(criteria))) {
-            return .{ .frm = self.frm, .whr = self.whr.orWhere(criteria) };
+            return .{ .frm = self.frm, .whr = self.whr.orWhere(criteria), .ord = self.ord, .lim = self.lim };
         }
 
         pub fn orderBy(self: *const @This(), col: std.meta.FieldEnum(T), ord: enum { asc, desc }) Query(T, From, W) {
@@ -193,7 +194,11 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
         }
 
         pub fn orderByRaw(self: *const @This(), order_by: []const u8) Query(T, From, W) {
-            return .{ .frm = self.frm, .whr = self.whr, .ord = order_by };
+            return .{ .frm = self.frm, .whr = self.whr, .ord = order_by, .lim = self.lim };
+        }
+
+        pub fn limit(self: *const @This(), n_limit: u32) Query(T, From, W) {
+            return .{ .frm = self.frm, .whr = self.whr, .ord = self.ord, .lim = n_limit };
         }
 
         pub fn sql(self: *const @This(), buf: *std.ArrayList(u8)) !void {
@@ -204,6 +209,11 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
             if (self.ord) |ord| {
                 try buf.appendSlice(" ORDER BY ");
                 try buf.appendSlice(ord);
+            }
+
+            if (self.lim) |lim| {
+                try buf.appendSlice(" LIMIT ");
+                try std.fmt.formatInt(lim, 10, .lower, .{}, buf.writer());
             }
         }
 
@@ -330,6 +340,11 @@ fn checkFields(comptime T: type, comptime D: type) void {
                         else => {},
                     }
 
+                    switch (@typeInfo(f2.type)) {
+                        .Optional => |opt| if (f.type == opt.child) continue :outer,
+                        else => {},
+                    }
+
                     @compileError(
                         "Type mismatch for field " ++ f.name ++
                             " found:" ++ @typeName(f.type) ++
@@ -397,6 +412,11 @@ test "query" {
     try expectSql(
         query(Person).orderBy(.name, .asc),
         "SELECT id, name, age FROM Person ORDER BY name asc",
+    );
+
+    try expectSql(
+        query(Person).limit(10).limit(20),
+        "SELECT id, name, age FROM Person LIMIT 20",
     );
 }
 
