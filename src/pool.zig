@@ -1,6 +1,11 @@
 const std = @import("std");
 const sqlite = @import("sqlite.zig");
 
+pub const PoolOptions = struct {
+    count: usize = 1,
+    busy_timeout: u32 = 1_000,
+};
+
 /// A simple connection pool. This is especially useful for web servers where
 /// each request needs its own "session" with separate transactions. The pool
 /// makes it easy to obtain a connection at the start of a request and release
@@ -14,21 +19,20 @@ pub const Pool = struct {
 
     /// Initialize a connection pool with `count` connections opened to the
     /// sqlite database at `filename`.
-    pub fn init(allocator: std.mem.Allocator, filename: [*:0]const u8, count: usize) !Pool {
-        const conns = try allocator.alloc(sqlite.SQLite3, count);
+    pub fn init(allocator: std.mem.Allocator, filename: [*:0]const u8, options: PoolOptions) !Pool {
+        const conns = try allocator.alloc(sqlite.SQLite3, options.count);
         errdefer allocator.free(conns);
 
-        for (0..count) |i| {
-            conns[i] = try sqlite.SQLite3.open(filename);
+        for (conns) |*conn| {
+            conn.* = try sqlite.SQLite3.open(filename);
 
-            // TODO: make this configurable
-            try conns[i].setBusyTimeout(1_000);
+            try conn.setBusyTimeout(options.busy_timeout);
         }
 
         return .{
             .allocator = allocator,
             .conns = conns,
-            .index = count,
+            .index = conns.len,
         };
     }
 
