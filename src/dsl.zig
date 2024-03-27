@@ -6,7 +6,7 @@ pub fn raw(comptime sql: []const u8, bindings: anytype) Raw(sql, @TypeOf(binding
 }
 
 /// Create select query.
-pub fn query(comptime T: type) Query(T, Raw(tableName(T), void), Where(void)) {
+pub fn query(comptime T: type) Query(T, fields(T), Raw(tableName(T), void), Where(void)) {
     return .{ .frm = undefined, .whr = undefined };
 }
 
@@ -164,7 +164,7 @@ pub fn Where(comptime Head: type) type {
     };
 }
 
-pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
+pub fn Query(comptime T: type, comptime sel: []const u8, comptime From: type, comptime W: type) type {
     return struct {
         pub const Row = T;
 
@@ -173,19 +173,23 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
         ord: ?[]const u8 = null,
         lim: ?u32 = null,
 
-        pub fn from(self: *const @This(), frm: anytype) Query(T, @TypeOf(frm), W) {
+        pub fn from(self: *const @This(), frm: anytype) Query(T, sel, @TypeOf(frm), W) {
             return .{ .frm = frm, .whr = self.whr, .ord = self.ord, .lim = self.lim };
         }
 
-        pub fn where(self: *const @This(), criteria: anytype) Query(T, From, W.Cons(@TypeOf(criteria))) {
+        pub fn where(self: *const @This(), criteria: anytype) Query(T, sel, From, W.Cons(@TypeOf(criteria))) {
             return .{ .frm = self.frm, .whr = self.whr.andWhere(criteria), .ord = self.ord, .lim = self.lim };
         }
 
-        pub fn orWhere(self: *const @This(), criteria: anytype) Query(T, From, W.Cons(@TypeOf(criteria))) {
+        pub fn orWhere(self: *const @This(), criteria: anytype) Query(T, sel, From, W.Cons(@TypeOf(criteria))) {
             return .{ .frm = self.frm, .whr = self.whr.orWhere(criteria), .ord = self.ord, .lim = self.lim };
         }
 
-        pub fn orderBy(self: *const @This(), col: std.meta.FieldEnum(T), ord: enum { asc, desc }) Query(T, From, W) {
+        pub fn select(self: *const @This(), comptime names: []const std.meta.FieldEnum(T)) Query(FieldsTuple(T, names), selectFields(T, names), From, W) {
+            return .{ .frm = self.frm, .whr = self.whr, .ord = self.ord, .lim = self.lim };
+        }
+
+        pub fn orderBy(self: *const @This(), col: std.meta.FieldEnum(T), ord: enum { asc, desc }) Query(T, sel, From, W) {
             return self.orderByRaw(switch (col) {
                 inline else => |c| switch (ord) {
                     inline else => |o| @tagName(c) ++ " " ++ @tagName(o),
@@ -193,16 +197,16 @@ pub fn Query(comptime T: type, comptime From: type, comptime W: type) type {
             });
         }
 
-        pub fn orderByRaw(self: *const @This(), order_by: []const u8) Query(T, From, W) {
+        pub fn orderByRaw(self: *const @This(), order_by: []const u8) Query(T, sel, From, W) {
             return .{ .frm = self.frm, .whr = self.whr, .ord = order_by, .lim = self.lim };
         }
 
-        pub fn limit(self: *const @This(), n_limit: u32) Query(T, From, W) {
+        pub fn limit(self: *const @This(), n_limit: u32) Query(T, sel, From, W) {
             return .{ .frm = self.frm, .whr = self.whr, .ord = self.ord, .lim = n_limit };
         }
 
         pub fn sql(self: *const @This(), buf: *std.ArrayList(u8)) !void {
-            try buf.appendSlice(comptime "SELECT " ++ fields(T) ++ " FROM ");
+            try buf.appendSlice(comptime "SELECT " ++ sel ++ " FROM ");
             try self.frm.sql(buf);
             try self.whr.sql(buf);
 
@@ -321,6 +325,28 @@ pub fn Delete(comptime T: type, comptime tbl: []const u8, comptime W: type) type
     };
 }
 
+fn FieldsTuple(comptime T: type, comptime names: []const std.meta.FieldEnum(T)) type {
+    comptime {
+        var types: [names.len]type = undefined;
+        for (names, 0..) |field, i| types[i] = std.meta.FieldType(T, field);
+
+        return std.meta.Tuple(&types);
+    }
+}
+
+fn selectFields(comptime T: type, names: []const std.meta.FieldEnum(T)) []const u8 {
+    return comptime brk: {
+        var res: []const u8 = "";
+
+        for (names) |name| {
+            if (res.len > 0) res = res ++ ", ";
+            res = res ++ @tagName(name);
+        }
+
+        break :brk res;
+    };
+}
+
 fn checkFields(comptime T: type, comptime D: type) void {
     comptime {
         outer: for (@typeInfo(D).Struct.fields) |f| {
@@ -421,6 +447,13 @@ test "query" {
         query(Person).limit(10).limit(20),
         "SELECT id, name, age FROM Person LIMIT 20",
     );
+}
+
+test "query.select()" {
+    const q = query(Person).select(&.{ .name, .age });
+
+    try expectSql(q, "SELECT name, age FROM Person");
+    try std.testing.expectEqual(@TypeOf(q).Row, std.meta.Tuple(&.{ []const u8, u8 }));
 }
 
 test "insert" {
