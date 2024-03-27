@@ -25,4 +25,10 @@ pub fn build(b: *std.Build) !void {
             },
         });
     }
+
+    const tests = b.addTest(.{ .root_source_file = .{ .path = "src/main.zig" } });
+    tests.root_module.link_objects = sqlite.link_objects;
+    const run_tests = b.addRunArtifact(tests);
+    const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&run_tests.step);
 }
