@@ -167,7 +167,7 @@ const Binder = struct {
     pub fn bind(self: *Binder, value: anytype) !void {
         defer self.i += 1;
 
-        if (comptime @typeInfo(@TypeOf(value)) == .Struct) {
+        if (comptime @typeInfo(@TypeOf(value)) == .Struct and @TypeOf(value) != sqlite.Blob) {
             return self.stmt.bind(
                 self.i,
                 try std.json.stringifyAlloc(
