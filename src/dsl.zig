@@ -326,23 +326,8 @@ fn checkFields(comptime T: type, comptime D: type) void {
         outer: for (@typeInfo(D).Struct.fields) |f| {
             for (@typeInfo(T).Struct.fields) |f2| {
                 if (std.mem.eql(u8, f.name, f2.name)) {
-                    if (f.type == f2.type) {
+                    if (isAssignableTo(f.type, f2.type)) {
                         continue :outer;
-                    }
-
-                    if (isString(f.type) and isString(f2.type)) {
-                        continue :outer;
-                    }
-
-                    switch (@typeInfo(f.type)) {
-                        .ComptimeInt => if (@typeInfo(f2.type) == .Int) continue :outer,
-                        .ComptimeFloat => if (@typeInfo(f2.type) == .Float) continue :outer,
-                        else => {},
-                    }
-
-                    switch (@typeInfo(f2.type)) {
-                        .Optional => |opt| if (f.type == opt.child) continue :outer,
-                        else => {},
                     }
 
                     @compileError(
@@ -356,6 +341,24 @@ fn checkFields(comptime T: type, comptime D: type) void {
             @compileError("Unknown field " ++ f.name);
         }
     }
+}
+
+fn isAssignableTo(comptime A: type, B: type) bool {
+    if (A == B) return true;
+    if (isString(A) and isString(B)) return true;
+
+    switch (@typeInfo(A)) {
+        .ComptimeInt => if (@typeInfo(B) == .Int) return true,
+        .ComptimeFloat => if (@typeInfo(B) == .Float) return true,
+        else => {},
+    }
+
+    switch (@typeInfo(B)) {
+        .Optional => |opt| if (isAssignableTo(A, opt.child)) return true,
+        else => {},
+    }
+
+    return false;
 }
 
 pub fn isString(comptime T: type) bool {
