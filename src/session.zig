@@ -60,10 +60,9 @@ pub const Session = struct {
         try stmt.exec();
     }
 
-    /// Create a new record.
-    pub fn create(self: *Session, comptime T: type, data: anytype) !T {
+    /// Insert a new record.
+    pub fn insert(self: *Session, comptime T: type, data: anytype) !void {
         try self.exec(dsl.insert(T).values(data));
-        return try self.find(T, @intCast(try self.conn.lastInsertRowId())) orelse @panic("concurrent write");
     }
 
     /// Update a record by its primary key
@@ -74,6 +73,12 @@ pub const Session = struct {
     /// Delete a record by its primary key.
     pub fn delete(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !void {
         return self.exec(dsl.delete(T).where(.{ .id = id }));
+    }
+
+    /// Create a new record and return it.
+    pub fn create(self: *Session, comptime T: type, data: anytype) !T {
+        try self.insert(T, data);
+        return try self.find(T, @intCast(try self.conn.lastInsertRowId())) orelse @panic("concurrent write");
     }
 
     /// Find a record by its primary key.
@@ -181,3 +186,111 @@ const Binder = struct {
         try self.stmt.bind(self.i, value);
     }
 };
+
+const Person = struct {
+    id: u32,
+    name: []const u8,
+};
+
+fn sess() !Session {
+    var arena = try std.testing.allocator.create(std.heap.ArenaAllocator);
+    arena.* = std.heap.ArenaAllocator.init(std.testing.allocator);
+
+    var conn = try sqlite.SQLite3.open(":memory:");
+    errdefer conn.close();
+
+    try conn.execAll(
+        \\CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT);
+        \\INSERT INTO Person (name) VALUES ('Alice');
+        \\INSERT INTO Person (name) VALUES ('Bob');
+    );
+
+    return Session.fromConnection(arena.allocator(), conn);
+}
+
+fn cleanup(db: *Session) void {
+    const arena: *std.heap.ArenaAllocator = @ptrCast(@alignCast(db.arena.ptr));
+    db.deinit();
+    arena.deinit();
+    std.testing.allocator.destroy(arena);
+}
+
+test "exec()" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    try db.exec("INSERT INTO Person (name) VALUES ('Charlie')");
+    try std.testing.expectEqualDeep(3, db.conn.lastInsertRowId());
+}
+
+test "insert(T, data)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    try db.insert(Person, .{ .name = "Charlie" });
+    try std.testing.expectEqualDeep(3, db.conn.lastInsertRowId());
+}
+
+test "update(T, id, data)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    try db.update(Person, 1, .{ .name = "Sarah" });
+    const person = try db.find(Person, 1) orelse return error.NotFound;
+    try std.testing.expectEqualDeep(Person{ .id = 1, .name = "Sarah" }, person);
+}
+
+test "delete(T, id)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    try db.delete(Person, 1);
+    try std.testing.expectEqualDeep(1, db.conn.rowsAffected());
+    try std.testing.expectEqualDeep(null, db.find(Person, 1));
+}
+
+test "find(T, id)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    const person = try db.find(Person, 1) orelse return error.NotFound;
+    try std.testing.expectEqualDeep(Person{ .id = 1, .name = "Alice" }, person);
+}
+
+test "findBy(T, criteria)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    const person = try db.findBy(Person, .{ .name = "Alice" }) orelse return error.NotFound;
+    try std.testing.expectEqualDeep(Person{ .id = 1, .name = "Alice" }, person);
+}
+
+test "findOne(query)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    const person = try db.findOne(dsl.query(Person).where(.{ .name = "Alice" })) orelse return error.NotFound;
+    try std.testing.expectEqualDeep(Person{ .id = 1, .name = "Alice" }, person);
+}
+
+test "findAll(query)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    try std.testing.expectEqualDeep(&[_]Person{
+        .{ .id = 1, .name = "Alice" },
+        .{ .id = 2, .name = "Bob" },
+    }, db.findAll(dsl.query(Person)));
+}
+
+test "pluck(query, field)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    const names = try db.pluck(dsl.query(Person), .name);
+
+    try std.testing.expectEqualDeep(&[_][]const u8{
+        "Alice",
+        "Bob",
+    }, names);
+}
