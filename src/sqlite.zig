@@ -145,9 +145,9 @@ pub const Statement = struct {
             Blob => try self.column(?T, index) orelse error.NullPointer,
             ?Blob => {
                 const len = c.sqlite3_column_bytes(self.stmt, i);
-                const data = c.sqlite3_column_blob(self.stmt, i);
+                const data: [*c]const u8 = @ptrCast(c.sqlite3_column_blob(self.stmt, i));
 
-                return if (data != null) Blob{data[0..@intCast(len)]} else null;
+                return if (data != null) Blob{ .bytes = data[0..@intCast(len)] } else null;
             },
             else => switch (@typeInfo(T)) {
                 .Bool => c.sqlite3_column_int(self.stmt, i) != 0,

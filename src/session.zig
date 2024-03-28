@@ -141,7 +141,7 @@ pub const Session = struct {
         var res: T = undefined;
 
         inline for (std.meta.fields(@TypeOf(res)), 0..) |f, i| {
-            if (comptime @typeInfo(f.type) == .Struct) {
+            if (comptime @typeInfo(f.type) == .Struct and f.type != sqlite.Blob) {
                 @field(res, f.name) = try std.json.parseFromSliceLeaky(
                     f.type,
                     self.arena,
@@ -161,7 +161,7 @@ pub const Session = struct {
 
     fn dupe(self: *Session, value: anytype) std.mem.Allocator.Error!@TypeOf(value) {
         return switch (@TypeOf(value)) {
-            sqlite.Blob => sqlite.Blob{try self.arena.dupe(u8, value)},
+            sqlite.Blob => sqlite.Blob{ .bytes = try self.arena.dupe(u8, value.bytes) },
             []const u8 => self.arena.dupe(u8, value),
             [:0]const u8 => self.arena.dupeZ(u8, value),
             else => |T| switch (@typeInfo(T)) {
