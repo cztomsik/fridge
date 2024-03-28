@@ -8,7 +8,7 @@ const c = @cImport(
 pub const migrate = @import("migrate.zig").migrate;
 
 /// Convenience wrapper for a blob of data.
-pub const Blob = struct { []const u8 };
+pub const Blob = struct { bytes: []const u8 };
 
 /// Low-level SQLite database connection. It's main purpose is to provide a
 /// way to prepare statements.
@@ -108,7 +108,7 @@ pub const Statement = struct {
             u64 => c.sqlite3_bind_int64(self.stmt, i, @intCast(arg)),
             f64, @TypeOf(0.0) => c.sqlite3_bind_double(self.stmt, i, arg),
             []const u8, []u8, [:0]const u8, [:0]u8 => c.sqlite3_bind_text(self.stmt, i, arg.ptr, @intCast(arg.len), null),
-            Blob => c.sqlite3_bind_blob(self.stmt, i, arg[0].ptr, @intCast(arg[0].len), null),
+            Blob => c.sqlite3_bind_blob(self.stmt, i, arg.bytes.ptr, @intCast(arg.bytes.len), null),
             else => |T| {
                 const info = @typeInfo(T);
 
