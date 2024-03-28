@@ -128,6 +128,15 @@ pub const Session = struct {
         return res;
     }
 
+    /// Return the number of records for the given query.
+    pub fn count(self: *Session, query: anytype) !u64 {
+        var stmt = try self.prepare(query.count());
+        defer stmt.deinit();
+
+        _ = try stmt.step();
+        return try stmt.column(u64, 0);
+    }
+
     fn readRow(self: *Session, comptime T: type, stmt: *sqlite.Statement) !T {
         var res: T = undefined;
 

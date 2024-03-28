@@ -189,6 +189,10 @@ pub fn Query(comptime T: type, comptime sel: []const u8, comptime From: type, co
             return .{ .frm = self.frm, .whr = self.whr, .ord = self.ord, .lim = self.lim };
         }
 
+        pub fn count(self: *const @This()) Query(std.meta.Tuple(&.{u64}), "COUNT(*)", From, W) {
+            return .{ .frm = self.frm, .whr = self.whr, .ord = self.ord, .lim = self.lim };
+        }
+
         pub fn orderBy(self: *const @This(), col: std.meta.FieldEnum(T), ord: enum { asc, desc }) Query(T, sel, From, W) {
             return self.orderByRaw(switch (col) {
                 inline else => |c| switch (ord) {
@@ -454,6 +458,13 @@ test "query.select()" {
 
     try expectSql(q, "SELECT name, age FROM Person");
     try std.testing.expectEqual(@TypeOf(q).Row, std.meta.Tuple(&.{ []const u8, u8 }));
+}
+
+test "query.count()" {
+    const q = query(Person).count();
+
+    try expectSql(q, "SELECT COUNT(*) FROM Person");
+    try std.testing.expectEqual(@TypeOf(q).Row, std.meta.Tuple(&.{u64}));
 }
 
 test "insert" {
