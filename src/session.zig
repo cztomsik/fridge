@@ -122,7 +122,7 @@ pub const Session = struct {
     pub fn pluck(self: *Session, query: anytype, comptime field: std.meta.FieldEnum(@TypeOf(query).Row)) ![]const std.meta.FieldType(@TypeOf(query).Row, field) {
         const rows = try self.findAll(query.select(&.{field}));
         var res: []std.meta.FieldType(@TypeOf(query).Row, field) = undefined;
-        res.ptr = @ptrCast(&rows[0]);
+        res.ptr = @ptrCast(rows.ptr);
         res.len = rows.len;
 
         return res;
