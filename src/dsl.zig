@@ -384,7 +384,10 @@ fn isAssignableTo(comptime A: type, B: type) bool {
     }
 
     switch (@typeInfo(B)) {
-        .Optional => |opt| if (isAssignableTo(A, opt.child)) return true,
+        .Optional => |opt| {
+            if (A == @TypeOf(null)) return true;
+            if (isAssignableTo(A, opt.child)) return true;
+        },
         else => {},
     }
 
