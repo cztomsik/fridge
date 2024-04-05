@@ -22,6 +22,11 @@ pub const SQLite3 = struct {
         const flags = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX;
 
         var db: ?*c.sqlite3 = null;
+        errdefer {
+            // SQLite may init the handle even if it fails to open the database.
+            if (db) |ptr| _ = c.sqlite3_close(ptr);
+        }
+
         try check(c.sqlite3_open_v2(filename, &db, flags, null));
 
         return .{
