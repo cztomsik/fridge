@@ -71,7 +71,6 @@ pub const SQLite3 = struct {
 
         return .{
             .stmt = stmt.?,
-            .sql = sql,
             .tail = if (tail != null and tail != sql.ptr + sql.len) sql[@intFromPtr(tail) - @intFromPtr(sql.ptr) ..] else null,
         };
     }
@@ -93,7 +92,6 @@ pub const SQLite3 = struct {
 /// locked until the `deinit()` or `reset()` is called.
 pub const Statement = struct {
     stmt: *c.sqlite3_stmt,
-    sql: []const u8,
     tail: ?[]const u8,
 
     /// Deinitializes the prepared statement.
