@@ -235,7 +235,7 @@ pub fn Where(comptime A: type, comptime op: []const u8, comptime B: type) type {
                 defer n += 1;
 
                 try buf.appendSlice(f.name);
-                try buf.appendSlice(" = ?");
+                try buf.appendSlice(comptime if (std.mem.indexOfScalar(u8, f.name, ' ') != null) " ?" else " = ?");
             }
         }
 
@@ -386,7 +386,10 @@ const Person = struct {
 };
 
 test "query" {
-    try expectSql(query(Person), "SELECT id, name, age FROM Person");
+    try expectSql(
+        query(Person),
+        "SELECT id, name, age FROM Person",
+    );
 
     try expectSql(
         query(Person).where(.{ .name = "Alice" }),
@@ -401,8 +404,13 @@ test "query" {
     try expectSql(
         query(Person)
             .where(raw("name = ?", .{"Alice"}))
-            .orWhere(raw("age = ?", .{20})),
-        "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
+            .orWhere(raw("age > ?", .{20})),
+        "SELECT id, name, age FROM Person WHERE name = ? OR age > ?",
+    );
+
+    try expectSql(
+        query(Person).where(.{ .@"age >=" = 20 }),
+        "SELECT id, name, age FROM Person WHERE age >= ?",
     );
 
     try expectSql(
