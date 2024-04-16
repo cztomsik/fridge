@@ -399,6 +399,13 @@ test "query" {
     );
 
     try expectSql(
+        query(Person)
+            .where(raw("name = ?", .{"Alice"}))
+            .orWhere(raw("age = ?", .{20})),
+        "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
+    );
+
+    try expectSql(
         query(Person).orderBy(.name, .asc),
         "SELECT id, name, age FROM Person ORDER BY name asc",
     );
