@@ -45,7 +45,7 @@ fn Query(comptime T: type, comptime R: type, comptime D: type, comptime W: type)
             delete,
         },
         whr: W,
-        order_by: []const Order(T),
+        order_by: []const u8,
         lim: i32,
         off: i32,
 
@@ -73,7 +73,15 @@ fn Query(comptime T: type, comptime R: type, comptime D: type, comptime W: type)
 
         // orWhere, ifWhere, optWhere, ???
 
-        pub fn orderBy(self: Self, order_by: []const Order(T)) Self {
+        pub fn orderBy(self: Self, col: std.meta.FieldEnum(T), ord: enum { asc, desc }) Self {
+            return self.orderByRaw(switch (col) {
+                inline else => |c| switch (ord) {
+                    inline else => |o| @tagName(c) ++ " " ++ @tagName(o),
+                },
+            });
+        }
+
+        pub fn orderByRaw(self: Self, order_by: []const u8) Self {
             var copy = self;
             copy.order_by = order_by;
             return copy;
@@ -164,15 +172,7 @@ fn Query(comptime T: type, comptime R: type, comptime D: type, comptime W: type)
 
             if (self.order_by.len > 0) {
                 try buf.appendSlice(" ORDER BY ");
-
-                for (self.order_by) |o| {
-                    try buf.appendSlice(switch (o) {
-                        .raw => |s| s,
-                        inline else => |c, ord| switch (c) {
-                            inline else => |col| @tagName(col) ++ " " ++ @tagName(ord),
-                        },
-                    });
-                }
+                try buf.appendSlice(self.order_by);
             }
 
             if (self.lim >= 0) {
@@ -256,14 +256,6 @@ pub fn Where(comptime A: type, comptime op: []const u8, comptime B: type) type {
                 try binder.bind(@field(part, f.name));
             }
         }
-    };
-}
-
-pub fn Order(comptime T: type) type {
-    return union(enum) {
-        raw: []const u8,
-        asc: std.meta.FieldEnum(T),
-        desc: std.meta.FieldEnum(T),
     };
 }
 
@@ -407,7 +399,7 @@ test "query" {
     );
 
     try expectSql(
-        query(Person).orderBy(&.{.{ .asc = .name }}),
+        query(Person).orderBy(.name, .asc),
         "SELECT id, name, age FROM Person ORDER BY name asc",
     );
 
