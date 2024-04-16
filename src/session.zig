@@ -35,26 +35,26 @@ pub const Session = struct {
     }
 
     /// Prepare a query into a statement.
-    pub fn prepare(self: *Session, queryable: anytype) !sqlite.Statement {
-        if (comptime dsl.isString(@TypeOf(queryable))) {
-            return self.conn.prepare(queryable);
+    pub fn prepare(self: *Session, query: anytype) !sqlite.Statement {
+        if (comptime dsl.isString(@TypeOf(query))) {
+            return self.conn.prepare(query);
         }
 
         defer self.buf.clearRetainingCapacity();
-        try queryable.sql(&self.buf);
+        try query.sql(&self.buf);
 
         var binder = Binder{
             .arena = self.arena,
             .stmt = try self.conn.prepare(self.buf.items),
         };
 
-        try queryable.bind(&binder);
+        try query.bind(&binder);
         return binder.stmt;
     }
 
     /// Execute a query.
-    pub fn exec(self: *Session, queryable: anytype) !void {
-        var stmt = try self.prepare(queryable);
+    pub fn exec(self: *Session, query: anytype) !void {
+        var stmt = try self.prepare(query);
         defer stmt.deinit();
 
         try stmt.exec();
@@ -62,17 +62,17 @@ pub const Session = struct {
 
     /// Insert a new record.
     pub fn insert(self: *Session, comptime T: type, data: anytype) !void {
-        try self.exec(dsl.insert(T).values(data));
+        try self.exec(dsl.query(T).insert(data));
     }
 
     /// Update a record by its primary key
     pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !void {
-        try self.exec(dsl.update(T).set(data).where(.{ .id = id }));
+        try self.exec(dsl.query(T).where(.{ .id = id }).update(data));
     }
 
     /// Delete a record by its primary key.
     pub fn delete(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !void {
-        return self.exec(dsl.delete(T).where(.{ .id = id }));
+        return self.exec(dsl.query(T).where(.{ .id = id }).delete());
     }
 
     /// Create a new record and return it.
