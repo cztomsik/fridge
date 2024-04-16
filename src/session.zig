@@ -72,7 +72,12 @@ pub const Session = struct {
 
     /// Delete a record by its primary key.
     pub fn delete(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !void {
-        return self.exec(dsl.query(T).where(.{ .id = id }).delete());
+        try self.deleteBy(T, .{ .id = id });
+    }
+
+    /// Delete records matching the given criteria.
+    pub fn deleteBy(self: *Session, comptime T: type, criteria: anytype) !void {
+        try self.exec(dsl.query(T).where(criteria).delete());
     }
 
     /// Create a new record and return it.
@@ -254,7 +259,16 @@ test "delete(T, id)" {
     defer cleanup(&db);
 
     try db.delete(Person, 1);
-    try std.testing.expectEqualDeep(1, db.conn.rowsAffected());
+    try std.testing.expectEqual(1, db.conn.rowsAffected());
+    try std.testing.expectEqualDeep(null, db.find(Person, 1));
+}
+
+test "deleteBy(T, criteria)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    try db.deleteBy(Person, .{ .name = "Alice" });
+    try std.testing.expectEqual(1, db.conn.rowsAffected());
     try std.testing.expectEqualDeep(null, db.find(Person, 1));
 }
 
