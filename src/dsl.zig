@@ -168,6 +168,11 @@ fn Query(comptime T: type, comptime R: type, comptime D: type, comptime W: type)
             if (comptime W != void) {
                 try buf.appendSlice(" WHERE ");
                 try self.whr.sql(buf);
+
+                // TODO: find a better way
+                if (std.mem.endsWith(u8, buf.items, " WHERE ")) {
+                    buf.items.len -= 7;
+                }
             }
 
             if (self.order_by.len > 0) {
@@ -231,11 +236,16 @@ pub fn Where(comptime A: type, comptime op: []const u8, comptime B: type) type {
             var n: usize = 0;
 
             inline for (@typeInfo(@TypeOf(part)).Struct.fields) |f| {
-                if (n > 0) try buf.appendSlice(" AND ");
-                defer n += 1;
+                const opt = comptime f.name[0] == '?';
+                const suffix = comptime if (std.mem.indexOfScalar(u8, f.name, ' ') != null) " ?" else " = ?";
+                const expr = comptime f.name[@intFromBool(opt)..] ++ suffix;
 
-                try buf.appendSlice(f.name);
-                try buf.appendSlice(comptime if (std.mem.indexOfScalar(u8, f.name, ' ') != null) " ?" else " = ?");
+                if (if (comptime opt) @field(part, f.name) != null else true) {
+                    if (n > 0) try buf.appendSlice(" AND ");
+                    defer n += 1;
+
+                    try buf.appendSlice(expr);
+                }
             }
         }
 
@@ -253,7 +263,11 @@ pub fn Where(comptime A: type, comptime op: []const u8, comptime B: type) type {
             }
 
             inline for (@typeInfo(@TypeOf(part)).Struct.fields) |f| {
-                try binder.bind(@field(part, f.name));
+                const opt = comptime f.name[0] == '?';
+
+                if (if (comptime opt) @field(part, f.name) != null else true) {
+                    try binder.bind(@field(part, f.name));
+                }
             }
         }
     };
@@ -411,6 +425,21 @@ test "query" {
     try expectSql(
         query(Person).where(.{ .@"age >=" = 20 }),
         "SELECT id, name, age FROM Person WHERE age >= ?",
+    );
+
+    try expectSql(
+        query(Person).where(.{ .@"?age" = null }),
+        "SELECT id, name, age FROM Person",
+    );
+
+    try expectSql(
+        query(Person).where(.{ .@"?age" = null, .name = "Alice" }),
+        "SELECT id, name, age FROM Person WHERE name = ?",
+    );
+
+    try expectSql(
+        query(Person).where(.{ .@"?age" = @as(?u32, 20) }),
+        "SELECT id, name, age FROM Person WHERE age = ?",
     );
 
     try expectSql(
