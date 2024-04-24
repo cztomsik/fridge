@@ -226,6 +226,11 @@ pub fn Where(comptime A: type, comptime op: []const u8, comptime B: type) type {
             }
 
             try sqlPart(self.b, buf);
+
+            // TODO: find a better way
+            if (std.mem.endsWith(u8, buf.items, op)) {
+                buf.items.len -= op.len;
+            }
         }
 
         fn sqlPart(part: anytype, buf: *std.ArrayList(u8)) !void {
@@ -434,6 +439,11 @@ test "query" {
 
     try expectSql(
         query(Person).where(.{ .@"?age" = null, .name = "Alice" }),
+        "SELECT id, name, age FROM Person WHERE name = ?",
+    );
+
+    try expectSql(
+        query(Person).where(.{ .name = "Alice" }).where(.{ .@"?age" = null }),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
