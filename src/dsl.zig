@@ -166,11 +166,13 @@ fn Query(comptime T: type, comptime R: type, comptime D: type, comptime W: type)
             }
 
             if (comptime W != void) {
+                const prev = buf.items.len;
+
                 try buf.appendSlice(" WHERE ");
                 try self.whr.sql(buf);
 
-                // TODO: find a better way
-                if (std.mem.endsWith(u8, buf.items, " WHERE ")) {
+                // Remove WHERE clause if it's empty.
+                if (buf.items.len == prev + 7) {
                     buf.items.len -= 7;
                 }
             }
@@ -220,16 +222,23 @@ pub fn Where(comptime A: type, comptime op: []const u8, comptime B: type) type {
         b: B,
 
         fn sql(self: *const @This(), buf: *std.ArrayList(u8)) !void {
+            var prev = buf.items.len;
+
             if (comptime A != void) {
                 try sqlPart(self.a, buf);
-                try buf.appendSlice(op);
+
+                // Only append the operator if the left side is non-empty.
+                if (buf.items.len > prev) {
+                    prev = buf.items.len;
+                    try buf.appendSlice(op);
+                }
             }
 
             try sqlPart(self.b, buf);
 
-            // TODO: find a better way
-            if (std.mem.endsWith(u8, buf.items, op)) {
-                buf.items.len -= op.len;
+            // Remove the operator if the right side is empty.
+            if (buf.items.len == prev + op.len) {
+                buf.items.len = prev;
             }
         }
 
@@ -433,12 +442,22 @@ test "query" {
     );
 
     try expectSql(
+        query(Person).where(.{ .@"?age" = null }).where(.{ .@"?name" = null }),
+        "SELECT id, name, age FROM Person",
+    );
+
+    try expectSql(
         query(Person).where(.{ .@"?age" = null }),
         "SELECT id, name, age FROM Person",
     );
 
     try expectSql(
         query(Person).where(.{ .@"?age" = null, .name = "Alice" }),
+        "SELECT id, name, age FROM Person WHERE name = ?",
+    );
+
+    try expectSql(
+        query(Person).where(.{ .@"?age" = null }).where(.{ .name = "Alice" }),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
