@@ -49,23 +49,21 @@ fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
         .where(dsl.raw("name != 'sqlite_sequence' AND name NOT LIKE 'sqlite_autoindex_%'", .{}));
 
     for (try pristine.findAll(objects)) |obj| {
-        log.debug("-- Checking {s} {s}", .{ kind, obj.name });
-
         // Check if object exists
         const curr = try db.findBy(sqlite_master, .{ .type = kind, .name = obj.name }) orelse {
-            log.debug("{s} does not exist, creating", .{kind});
+            logObject(obj, .create);
             try db.exec(obj.sql);
             continue;
         };
 
         // Check if object is the same
         if (std.mem.eql(u8, curr.sql, obj.sql)) {
-            log.debug("{s} already exists and is the same", .{kind});
+            logObject(obj, .ok);
             continue;
         }
 
         if (std.mem.eql(u8, kind, "table")) {
-            log.debug("{s} already exists but is different, migrating", .{kind});
+            logObject(obj, .update);
 
             // First, create a temp table with the new schema
             const temp_sql = try std.fmt.allocPrint(db.arena, "CREATE TABLE temp {s}", .{obj.sql[std.mem.indexOf(u8, obj.sql, "(").?..]});
@@ -88,16 +86,14 @@ fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
             }
 
             // Drop old table
-            log.debug("Dropping old table", .{});
             const drop_sql = try std.fmt.allocPrint(db.arena, "DROP TABLE {s}", .{obj.name});
             try db.exec(drop_sql);
 
             // Rename temp table to old table
-            log.debug("Renaming temp table", .{});
             const rename_sql = try std.fmt.allocPrint(db.arena, "ALTER TABLE temp RENAME TO {s}", .{obj.name});
             try db.exec(rename_sql);
         } else {
-            log.debug("{s} already exists but is different, dropping and recreating", .{kind});
+            logObject(obj, .replace);
 
             // Drop old object
             const drop_sql = try std.fmt.allocPrint(db.arena, "DROP {s} {s}", .{ kind, obj.name });
@@ -112,12 +108,16 @@ fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
 
     for (try db.findAll(objects)) |obj| {
         if (try pristine.findBy(sqlite_master, .{ .type = kind, .name = obj.name }) == null) {
-            log.debug("-- Dropping extraneous {s} {s}", .{ kind, obj.name });
+            logObject(obj, .drop);
 
             const drop_sql = try std.fmt.allocPrint(db.arena, "DROP {s} {s}", .{ kind, obj.name });
             try db.exec(drop_sql);
         }
     }
+}
+
+fn logObject(obj: sqlite_master, status: enum { ok, create, update, replace, drop }) void {
+    log.debug("{s:<7}  {s:<30}  {s}", .{ obj.type, obj.name, @tagName(status) });
 }
 
 const sqlite_master = struct {
