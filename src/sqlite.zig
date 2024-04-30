@@ -156,7 +156,7 @@ pub const Statement = struct {
     }
 
     pub fn isNull(self: *Statement, index: usize) bool {
-        return c.sqlite3_column_type(self.stmt, @intCast(index + 1)) == c.SQLITE_NULL;
+        return c.sqlite3_column_type(self.stmt, @intCast(index)) == c.SQLITE_NULL;
     }
 
     /// Advances the prepared statement to the next row.
