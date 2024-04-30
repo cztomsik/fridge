@@ -168,7 +168,7 @@ pub const Session = struct {
         }
 
         return switch (T) {
-            sqlite.Blob => sqlite.Blob{ .bytes = try stmt.column([]const u8, i) },
+            sqlite.Blob => sqlite.Blob{ .bytes = try self.readValue([]const u8, stmt, i) },
             []const u8, [:0]const u8 => self.arena.dupeZ(u8, try stmt.column([]const u8, i)),
             else => try stmt.column(T, i),
         };
