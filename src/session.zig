@@ -147,34 +147,30 @@ pub const Session = struct {
         var res: T = undefined;
 
         inline for (std.meta.fields(@TypeOf(res)), 0..) |f, i| {
-            if (comptime @typeInfo(f.type) == .Struct and f.type != sqlite.Blob) {
-                @field(res, f.name) = try std.json.parseFromSliceLeaky(
-                    f.type,
-                    self.arena,
-                    try stmt.column([]const u8, i),
-                    .{},
-                );
-                continue;
-            }
-
-            @field(res, f.name) = try self.dupe(
-                try stmt.column(f.type, i),
-            );
+            @field(res, f.name) = try self.readValue(f.type, stmt, i);
         }
 
         return res;
     }
 
-    fn dupe(self: *Session, value: anytype) std.mem.Allocator.Error!@TypeOf(value) {
-        return switch (@TypeOf(value)) {
-            sqlite.Blob => sqlite.Blob{ .bytes = try self.arena.dupe(u8, value.bytes) },
-            []const u8 => self.arena.dupe(u8, value),
-            [:0]const u8 => self.arena.dupeZ(u8, value),
-            else => |T| switch (@typeInfo(T)) {
-                .Optional => try self.dupe(value orelse return null),
-                .Struct => @compileError("TODO"),
-                else => value,
-            },
+    fn readValue(self: *Session, comptime T: type, stmt: *sqlite.Statement, i: usize) !T {
+        if (comptime @typeInfo(T) == .Optional) {
+            return if (stmt.isNull(i)) null else try self.readValue(@typeInfo(T).Optional.child, stmt, i);
+        }
+
+        if (comptime isJsonType(T)) {
+            return std.json.parseFromSliceLeaky(
+                T,
+                self.arena,
+                try stmt.column([]const u8, i),
+                .{},
+            );
+        }
+
+        return switch (T) {
+            sqlite.Blob => sqlite.Blob{ .bytes = try stmt.column([]const u8, i) },
+            []const u8, [:0]const u8 => self.arena.dupeZ(u8, try stmt.column([]const u8, i)),
+            else => try stmt.column(T, i),
         };
     }
 };
@@ -185,9 +181,11 @@ const Binder = struct {
     i: usize = 0,
 
     pub fn bind(self: *Binder, value: anytype) !void {
-        defer self.i += 1;
+        if (comptime @typeInfo(@TypeOf(value)) == .Optional) {
+            return if (value) |v| self.bind(v) else self.bind(null);
+        }
 
-        if (comptime @typeInfo(@TypeOf(value)) == .Struct and @TypeOf(value) != sqlite.Blob) {
+        if (comptime isJsonType(@TypeOf(value))) {
             return self.stmt.bind(
                 self.i,
                 try std.json.stringifyAlloc(
@@ -199,8 +197,16 @@ const Binder = struct {
         }
 
         try self.stmt.bind(self.i, value);
+        self.i += 1;
     }
 };
+
+fn isJsonType(comptime T: type) bool {
+    return T != sqlite.Blob and switch (@typeInfo(T)) {
+        .Array, .Struct => true,
+        else => false,
+    };
+}
 
 const Person = struct {
     id: u32,
