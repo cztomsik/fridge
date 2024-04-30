@@ -1,6 +1,7 @@
 const std = @import("std");
 const dsl = @import("dsl.zig");
 const sqlite = @import("sqlite.zig");
+const util = @import("util.zig");
 const Pool = @import("pool.zig").Pool;
 
 pub const Session = struct {
@@ -36,7 +37,7 @@ pub const Session = struct {
 
     /// Prepare a query into a statement.
     pub fn prepare(self: *Session, query: anytype) !sqlite.Statement {
-        if (comptime dsl.isString(@TypeOf(query))) {
+        if (comptime util.isString(@TypeOf(query))) {
             return self.conn.prepare(query);
         }
 

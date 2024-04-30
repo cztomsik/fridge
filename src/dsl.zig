@@ -1,4 +1,5 @@
 const std = @import("std");
+const util = @import("util.zig");
 
 /// Create a raw SQL fragment.
 pub fn raw(comptime sql: []const u8, bindings: anytype) Raw(sql, @TypeOf(bindings)) {
@@ -370,7 +371,7 @@ fn checkFields(comptime T: type, comptime D: type) void {
 
 fn isAssignableTo(comptime A: type, B: type) bool {
     if (A == B) return true;
-    if (isString(A) and isString(B)) return true;
+    if (util.isString(A) and util.isString(B)) return true;
 
     switch (@typeInfo(A)) {
         .ComptimeInt => if (@typeInfo(B) == .Int) return true,
@@ -387,16 +388,6 @@ fn isAssignableTo(comptime A: type, B: type) bool {
     }
 
     return false;
-}
-
-pub fn isString(comptime T: type) bool {
-    return switch (@typeInfo(T)) {
-        .Pointer => |ptr| ptr.child == u8 or switch (@typeInfo(ptr.child)) {
-            .Array => |arr| arr.child == u8,
-            else => false,
-        },
-        else => false,
-    };
 }
 
 fn expectSql(q: anytype, sql: []const u8) !void {

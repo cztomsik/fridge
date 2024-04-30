@@ -1,4 +1,5 @@
 const std = @import("std");
+const util = @import("util.zig");
 const log = std.log.scoped(.sqlite);
 
 const c = @cImport(
@@ -106,24 +107,15 @@ pub const Statement = struct {
         try check(switch (@TypeOf(arg)) {
             @TypeOf(null) => c.sqlite3_bind_null(self.stmt, i),
             bool => c.sqlite3_bind_int(self.stmt, i, if (arg) 1 else 0),
-            i32 => c.sqlite3_bind_int(self.stmt, i, arg),
-            u32, i64, @TypeOf(1) => c.sqlite3_bind_int64(self.stmt, i, arg),
-            u64 => c.sqlite3_bind_int64(self.stmt, i, @intCast(arg)),
-            f64, @TypeOf(0.0) => c.sqlite3_bind_double(self.stmt, i, arg),
+            i32, u32, i64, u64, @TypeOf(1) => c.sqlite3_bind_int64(self.stmt, i, @intCast(arg)),
+            f32, f64, @TypeOf(0.0) => c.sqlite3_bind_double(self.stmt, i, @floatCast(arg)),
             []const u8, []u8, [:0]const u8, [:0]u8 => c.sqlite3_bind_text(self.stmt, i, arg.ptr, @intCast(arg.len), null),
             Blob => c.sqlite3_bind_blob(self.stmt, i, arg.bytes.ptr, @intCast(arg.bytes.len), null),
-            else => |T| {
-                const info = @typeInfo(T);
-
-                if (comptime info == .Optional) {
-                    return if (arg == null) check(c.sqlite3_bind_null(self.stmt, i)) else self.bind(index, arg.?);
-                }
-
-                if (comptime info == .Pointer and @typeInfo(info.Pointer.child) == .Array and @typeInfo(info.Pointer.child).Array.child == u8) {
-                    return self.bind(index, @as([]const u8, arg));
-                }
-
-                @compileError("TODO " ++ @typeName(T));
+            else => |T| return switch (@typeInfo(T)) {
+                .Optional => if (arg) |a| self.bind(index, a) else check(c.sqlite3_bind_null(self.stmt, i)),
+                .Pointer => if (comptime util.isString(T)) self.bind(index, @as([]const u8, arg)) else @compileError("Pointer type " ++ @typeName(T) ++ " is not supported"),
+                .Enum => if (comptime util.isDense(T)) self.bind(index, @tagName(arg)) else self.bind(index, @as(u32, @intFromEnum(arg))),
+                else => @compileError("TODO: " ++ @typeName(T)),
             },
         });
     }
@@ -138,6 +130,9 @@ pub const Statement = struct {
         const i: c_int = @intCast(index);
 
         return switch (T) {
+            bool => c.sqlite3_column_int(self.stmt, i) != 0,
+            i32, u32, i64, u64 => @intCast(c.sqlite3_column_int64(self.stmt, i)), // sqlite3_column_int() uses int64 internally
+            f32, f64 => @floatCast(c.sqlite3_column_double(self.stmt, i)),
             []const u8, [:0]const u8 => try self.column(?T, index) orelse error.NullPointer,
             ?[]const u8, ?[:0]const u8 => {
                 const len = c.sqlite3_column_bytes(self.stmt, i);
@@ -153,13 +148,15 @@ pub const Statement = struct {
                 return if (data != null) Blob{ .bytes = data[0..@intCast(len)] } else null;
             },
             else => switch (@typeInfo(T)) {
-                .Bool => c.sqlite3_column_int(self.stmt, i) != 0,
-                .Int => @intCast(c.sqlite3_column_int64(self.stmt, i)),
-                .Float => @floatCast(c.sqlite3_column_double(self.stmt, i)),
-                .Optional => |o| if (c.sqlite3_column_type(self.stmt, i) == c.SQLITE_NULL) null else try self.column(o.child, index),
+                .Optional => |o| if (self.isNull(index)) null else try self.column(o.child, index),
+                .Enum => if (comptime util.isDense(T)) std.meta.stringToEnum(T, self.column([]const u8, i)) orelse error.InvalidEnumTag else @enumFromInt(c.sqlite3_column_int64(self.stmt, i)),
                 else => @compileError("TODO: " ++ @typeName(T)),
             },
         };
+    }
+
+    pub fn isNull(self: *Statement, index: usize) bool {
+        return c.sqlite3_column_type(self.stmt, @intCast(index + 1)) == c.SQLITE_NULL;
     }
 
     /// Advances the prepared statement to the next row.
