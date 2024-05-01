@@ -194,7 +194,7 @@ const Binder = struct {
         }
 
         if (comptime isJsonType(@TypeOf(value))) {
-            return self.stmt.bind(
+            try self.stmt.bind(
                 self.i,
                 try std.json.stringifyAlloc(
                     self.arena,
@@ -202,9 +202,10 @@ const Binder = struct {
                     .{},
                 ),
             );
+        } else {
+            try self.stmt.bind(self.i, value);
         }
 
-        try self.stmt.bind(self.i, value);
         self.i += 1;
     }
 };
