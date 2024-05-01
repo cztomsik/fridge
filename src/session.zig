@@ -97,7 +97,7 @@ pub const Session = struct {
         return self.findOne(dsl.query(T).where(criteria));
     }
 
-    /// Return the first record for the given query.
+    /// Find a record for the given query.
     pub fn findOne(self: *Session, query: anytype) !?@TypeOf(query).Row {
         var stmt = try self.prepare(query);
         defer stmt.deinit();
@@ -124,6 +124,18 @@ pub const Session = struct {
         return res.toOwnedSlice();
     }
 
+    /// Find a single value for the given query.
+    pub fn findValue(self: *Session, comptime T: type, query: anytype) !?T {
+        var stmt = try self.prepare(query);
+        defer stmt.deinit();
+
+        if (try stmt.step() == .done) {
+            return null;
+        }
+
+        return try self.readValue(T, &stmt, 0);
+    }
+
     /// Return all values for a given field.
     pub fn pluck(self: *Session, query: anytype, comptime field: std.meta.FieldEnum(@TypeOf(query).Row)) ![]const std.meta.FieldType(@TypeOf(query).Row, field) {
         const rows = try self.findAll(query.select(&.{field}));
@@ -136,11 +148,7 @@ pub const Session = struct {
 
     /// Return the number of records for the given query.
     pub fn count(self: *Session, query: anytype) !u64 {
-        var stmt = try self.prepare(query.count());
-        defer stmt.deinit();
-
-        _ = try stmt.step();
-        return try stmt.column(u64, 0);
+        return (try self.findValue(u64, query.count())).?;
     }
 
     fn readRow(self: *Session, comptime T: type, stmt: *sqlite.Statement) !T {
