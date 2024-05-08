@@ -2,8 +2,11 @@ const std = @import("std");
 const util = @import("util.zig");
 
 /// Create a raw SQL fragment.
-pub fn raw(comptime sql: []const u8, bindings: anytype) Raw(sql, @TypeOf(bindings)) {
-    return .{ .bindings = bindings };
+pub fn raw(sql: []const u8, bindings: anytype) Raw(@TypeOf(bindings)) {
+    return .{
+        .raw_sql = sql,
+        .bindings = bindings,
+    };
 }
 
 /// Create a query.
@@ -17,12 +20,13 @@ pub fn query(comptime T: type) Query(T, T, struct {}, void) {
     };
 }
 
-fn Raw(comptime raw_sql: []const u8, comptime T: type) type {
+fn Raw(comptime T: type) type {
     return struct {
+        raw_sql: []const u8,
         bindings: T,
 
-        pub fn sql(_: *const @This(), buf: *std.ArrayList(u8)) !void {
-            try buf.appendSlice(raw_sql);
+        pub fn sql(self: *const @This(), buf: *std.ArrayList(u8)) !void {
+            try buf.appendSlice(self.raw_sql);
         }
 
         pub fn bind(self: *const @This(), binder: anytype) !void {
