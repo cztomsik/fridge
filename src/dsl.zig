@@ -306,6 +306,7 @@ pub fn Select(comptime T: type, comptime sel: []const std.meta.FieldEnum(T)) typ
 
 fn tableName(comptime T: type) []const u8 {
     return comptime brk: {
+        if (@hasDecl(T, "sql_table_name")) break :brk T.sql_table_name;
         const s = @typeName(T);
         const i = std.mem.lastIndexOfScalar(u8, s, '.').?;
         break :brk s[i + 1 ..];
