@@ -8,14 +8,12 @@ pub const Session = struct {
     arena: std.mem.Allocator,
     conn: sqlite.SQLite3,
     pool: ?*Pool = null,
-    buf: std.ArrayList(u8),
 
     /// Create a new session from a connection.
     pub fn fromConnection(arena: std.mem.Allocator, conn: sqlite.SQLite3) Session {
         return .{
             .arena = arena,
             .conn = conn,
-            .buf = std.ArrayList(u8).init(arena),
         };
     }
 
@@ -41,12 +39,12 @@ pub const Session = struct {
             return self.conn.prepare(query);
         }
 
-        defer self.buf.clearRetainingCapacity();
-        try query.sql(&self.buf);
+        var buf = try std.ArrayList(u8).initCapacity(self.arena, 512);
+        try query.sql(&buf);
 
         var binder = Binder{
             .arena = self.arena,
-            .stmt = try self.conn.prepare(self.buf.items),
+            .stmt = try self.conn.prepare(buf.items),
         };
 
         try query.bind(&binder);
