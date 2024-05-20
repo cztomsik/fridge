@@ -169,7 +169,7 @@ pub const Session = struct {
                 T,
                 self.arena,
                 try stmt.column([]const u8, i),
-                .{},
+                .{ .allocate = .alloc_always },
             );
         }
 
