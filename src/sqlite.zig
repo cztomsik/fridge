@@ -149,7 +149,7 @@ pub const Statement = struct {
             },
             else => switch (@typeInfo(T)) {
                 .Optional => |o| if (self.isNull(index)) null else try self.column(o.child, index),
-                .Enum => if (comptime util.isDense(T)) std.meta.stringToEnum(T, self.column([]const u8, i)) orelse error.InvalidEnumTag else @enumFromInt(c.sqlite3_column_int64(self.stmt, i)),
+                .Enum => if (comptime util.isDense(T)) std.meta.stringToEnum(T, try self.column([]const u8, index)) orelse error.InvalidEnumTag else @enumFromInt(c.sqlite3_column_int64(self.stmt, i)),
                 else => @compileError("TODO: " ++ @typeName(T)),
             },
         };
