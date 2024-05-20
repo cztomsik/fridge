@@ -211,6 +211,7 @@ const Binder = struct {
 fn isJsonType(comptime T: type) bool {
     return T != sqlite.Blob and switch (@typeInfo(T)) {
         .Array, .Struct => true,
+        .Pointer => |p| p.size == .Slice and p.child != u8,
         else => false,
     };
 }
