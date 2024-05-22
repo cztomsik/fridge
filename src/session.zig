@@ -321,6 +321,22 @@ test "findAll(query)" {
     }, db.findAll(dsl.query(Person)));
 }
 
+test "findAll(raw)" {
+    var db = try sess();
+    defer cleanup(&db);
+
+    const Row = struct {
+        id: u32,
+        name: []const u8,
+    };
+
+    const rows = try db.findAll(dsl.raw("SELECT * FROM Person WHERE id = ?", .{1}).as(Row));
+
+    try std.testing.expectEqualDeep(&[_]Row{
+        .{ .id = 1, .name = "Alice" },
+    }, rows);
+}
+
 test "pluck(query, field)" {
     var db = try sess();
     defer cleanup(&db);

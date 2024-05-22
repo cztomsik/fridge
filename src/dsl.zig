@@ -2,7 +2,7 @@ const std = @import("std");
 const util = @import("util.zig");
 
 /// Create a raw SQL fragment.
-pub fn raw(sql: []const u8, bindings: anytype) Raw(@TypeOf(bindings)) {
+pub fn raw(sql: []const u8, bindings: anytype) Raw(@TypeOf(bindings), void) {
     return .{
         .raw_sql = sql,
         .bindings = bindings,
@@ -20,10 +20,16 @@ pub fn query(comptime T: type) Query(T, T, struct {}, void) {
     };
 }
 
-fn Raw(comptime T: type) type {
+fn Raw(comptime T: type, comptime R: type) type {
     return struct {
+        pub const Row = R;
+
         raw_sql: []const u8,
         bindings: T,
+
+        pub fn as(self: *const @This(), comptime R2: type) Raw(T, R2) {
+            return .{ .raw_sql = self.raw_sql, .bindings = self.bindings };
+        }
 
         pub fn sql(self: *const @This(), buf: *std.ArrayList(u8)) !void {
             try buf.appendSlice(self.raw_sql);
