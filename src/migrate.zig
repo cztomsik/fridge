@@ -46,7 +46,7 @@ pub fn migrate(allocator: std.mem.Allocator, filename: [*:0]const u8, ddl: []con
 fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
     const objects = dsl.query(sqlite_master)
         .where(.{ .type = kind })
-        .where(dsl.raw("name != 'sqlite_sequence' AND name NOT LIKE 'sqlite_autoindex_%'", .{}));
+        .where(dsl.raw("name NOT LIKE 'sqlite_%'", .{}));
 
     for (try pristine.findAll(objects)) |obj| {
         // Check if object exists
