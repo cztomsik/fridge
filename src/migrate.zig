@@ -74,7 +74,7 @@ fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
             // new block so it gets deinitialized and we can then drop and rename
             // the temp table
             {
-                var stmt = try db.prepare(dsl.raw("SELECT GROUP_CONCAT(name) FROM (SELECT name FROM pragma_table_info(?) INTERSECT SELECT name FROM pragma_table_info('temp'))", .{obj.name}));
+                var stmt = try db.prepare(dsl.raw("SELECT GROUP_CONCAT(name) FROM (SELECT name FROM pragma_table_xinfo(?) INTERSECT SELECT name FROM pragma_table_info('temp'))", .{obj.name}));
                 defer stmt.deinit();
 
                 _ = try stmt.step();
