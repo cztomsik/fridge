@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const SQLite3 = @import("sqlite.zig").SQLite3;
 pub const Blob = @import("sqlite.zig").Blob;
+pub const Statement = @import("sqlite.zig").Statement;
 pub const Pool = @import("pool.zig").Pool;
 pub const Session = @import("session.zig").Session;
 
