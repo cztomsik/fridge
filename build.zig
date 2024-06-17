@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) !void {
     const bundle = b.option(bool, "bundle", "Bundle SQLite") orelse false;
 
     const sqlite = b.addModule("fridge", .{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
     });
     sqlite.link_libc = true;
 
@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
-    const tests = b.addTest(.{ .root_source_file = .{ .path = "src/main.zig" } });
+    const tests = b.addTest(.{ .root_source_file = b.path("src/main.zig") });
     tests.root_module.link_objects = sqlite.link_objects;
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run tests");
