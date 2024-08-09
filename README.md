@@ -1,3 +1,6 @@
+> Everything here is already outdated, I'm working on a new version which will
+> be more pleasant to use.
+
 # Fridge
 
 A small, batteries-included database library for Zig. It provides an alloc-free
