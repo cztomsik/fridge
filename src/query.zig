@@ -60,6 +60,14 @@ pub fn Query(comptime T: type, comptime R: type) type {
             return @bitCast(self);
         }
 
+        pub fn select(self: Q, comptime col: Col) Q {
+            return self.selectRaw(@tagName(col));
+        }
+
+        pub fn selectRaw(self: Q, columns: []const u8) Q {
+            return self.append(.columns, ", ", columns, .{});
+        }
+
         pub fn where(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) Q {
             return self.whereRaw(@tagName(col) ++ " = ?", .{val});
         }
@@ -105,30 +113,27 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn value(self: Q, comptime col: Col) !?std.meta.FieldType(T, col) {
-            return self.valueRaw(std.meta.FieldType(T, col), @tagName(col), .{});
+            return self.valueRaw(std.meta.FieldType(T, col), @tagName(col));
         }
 
-        pub fn valueRaw(self: Q, comptime V: type, expr: []const u8, args: anytype) !?V {
-            _ = expr;
-            _ = args;
-
-            return self.limit(1).prepare().value(V);
+        pub fn valueRaw(self: Q, comptime V: type, expr: []const u8) !?V {
+            return self.select(expr).limit(1).prepare().value(V);
         }
 
         pub fn count(self: Q, comptime col: Col) !u64 {
-            return (try self.valueRaw(u64, "COUNT(" ++ @tagName(col) ++ ")", .{})).?;
+            return (try self.valueRaw(u64, "COUNT(" ++ @tagName(col) ++ ")")).?;
         }
 
         pub fn min(self: Q, comptime col: Col) !?std.meta.FieldType(T, col) {
-            return self.valueRaw(std.meta.FieldType(T, col), "MIN(" ++ @tagName(col) ++ ")", .{});
+            return self.valueRaw(std.meta.FieldType(T, col), "MIN(" ++ @tagName(col) ++ ")");
         }
 
         pub fn max(self: Q, comptime col: Col) !?std.meta.FieldType(T, col) {
-            return self.valueRaw(std.meta.FieldType(T, col), "MAX(" ++ @tagName(col) ++ ")", .{});
+            return self.valueRaw(std.meta.FieldType(T, col), "MAX(" ++ @tagName(col) ++ ")");
         }
 
         pub fn avg(self: Q, comptime col: Col) !?std.meta.FieldType(T, col) {
-            return self.valueRaw(std.meta.FieldType(T, col), "AVG(" ++ @tagName(col) ++ ")", .{});
+            return self.valueRaw(std.meta.FieldType(T, col), "AVG(" ++ @tagName(col) ++ ")");
         }
 
         pub fn exec(self: Q) !void {
@@ -315,6 +320,23 @@ test "query" {
     try expectSql(
         db.query(Person),
         "SELECT id, name, age FROM Person",
+    );
+}
+
+test "query.select()" {
+    try expectSql(
+        db.query(Person).select(.name),
+        "SELECT name FROM Person",
+    );
+
+    try expectSql(
+        db.query(Person).select(.name).select(.age),
+        "SELECT name, age FROM Person",
+    );
+
+    try expectSql(
+        db.query(Person).selectRaw("name, age"),
+        "SELECT name, age FROM Person",
     );
 }
 
