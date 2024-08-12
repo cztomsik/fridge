@@ -11,6 +11,9 @@ pub const Session = @import("session.zig").Session;
 pub const Query = @import("query.zig").Query;
 pub const Repo = @import("repo.zig").Repo;
 
+// TODO: this is SQLite only and maybe it should be elsewhere when we support other databases
+pub const migrate = @import("migrate.zig").migrate;
+
 test {
     std.testing.refAllDecls(@This());
 }
