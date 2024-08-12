@@ -1,11 +1,10 @@
 const std = @import("std");
 
-pub const Value = @import("util.zig").Value;
-pub const Blob = @import("util.zig").Blob;
-
+// pub const Pool = @import("pool.zig").Pool;
 pub const SQLite3 = @import("sqlite.zig").SQLite3;
 
-// pub const Pool = @import("pool.zig").Pool;
+pub const Value = @import("value.zig").Value;
+pub const Blob = @import("value.zig").Blob;
 pub const Session = @import("session.zig").Session;
 pub const Statement = @import("statement.zig").Statement;
 pub const Query = @import("query.zig").Query;

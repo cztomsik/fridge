@@ -1,14 +1,6 @@
 const std = @import("std");
 
-pub const Value = union(enum) {
-    bool: bool,
-    int: i64,
-    float: f64,
-    string: []const u8,
-    blob: []const u8,
-};
-
-pub const Blob = struct { bytes: []const u8 };
+pub const log = std.log.scoped(.fridge);
 
 pub fn tableName(comptime T: type) []const u8 {
     return comptime brk: {
