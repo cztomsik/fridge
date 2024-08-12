@@ -65,6 +65,7 @@ const Stmt = opaque {
         const i: c_int = @intCast(index + 1);
 
         try check(switch (arg) {
+            .null => c.sqlite3_bind_null(self.ptr(), i),
             .bool => |v| c.sqlite3_bind_int(self.ptr(), i, if (v) 1 else 0),
             .int => |v| c.sqlite3_bind_int64(self.ptr(), i, v),
             .float => |v| c.sqlite3_bind_double(self.ptr(), i, v),

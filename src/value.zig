@@ -2,6 +2,7 @@ const std = @import("std");
 const util = @import("util.zig");
 
 pub const Value = union(enum) {
+    null,
     bool: bool,
     int: i64,
     float: f64,
@@ -21,6 +22,7 @@ pub const Value = union(enum) {
                 }
 
                 return switch (@typeInfo(T)) {
+                    .Optional => if (val) |v| from(v, arena) else .null,
                     .Bool => .{ .bool = val },
                     .Int, .ComptimeInt => .{ .int = @intCast(val) },
                     .Float, .ComptimeFloat => .{ .float = @floatCast(val) },
