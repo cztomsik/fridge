@@ -1,5 +1,6 @@
 const std = @import("std");
 const util = @import("util.zig");
+const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
 const Statement = @import("statement.zig").Statement;
 
@@ -7,7 +8,7 @@ const RawPart = struct {
     prev: ?*const RawPart = null,
     sep: ?[]const u8 = null,
     sql: []const u8,
-    args: []const util.Value = &.{},
+    args: []const Value = &.{},
 
     fn writeSql(self: *const RawPart, buf: *std.ArrayList(u8)) !void {
         if (self.prev) |prev| {
@@ -285,10 +286,10 @@ pub fn Query(comptime T: type, comptime R: type) type {
 
             const fields = @typeInfo(@TypeOf(args)).Struct.fields;
             if (comptime fields.len > 0) {
-                const vals = self.session.arena.alloc(util.Value, fields.len) catch @panic("OOM");
+                const vals = self.session.arena.alloc(Value, fields.len) catch @panic("OOM");
 
                 inline for (fields, 0..) |f, i| {
-                    vals[i] = self.session.mapValue(@field(args, f.name)) catch @panic("OOM");
+                    vals[i] = Value.from(@field(args, f.name), self.session.arena) catch @panic("OOM");
                 }
             }
 
