@@ -28,8 +28,8 @@ const RawPart = struct {
         }
 
         for (self.args) |v| {
-            try stmt.bindValue(i, v);
-            i += 1;
+            try stmt.bind(i.*, v);
+            i.* = i.* + 1;
         }
     }
 };
@@ -118,7 +118,10 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn valueRaw(self: Q, comptime V: type, expr: []const u8) !?V {
-            return self.select(expr).limit(1).prepare().value(V);
+            var stmt = try self.select(expr).limit(1).prepare();
+            defer stmt.deinit();
+
+            return stmt.value(V);
         }
 
         pub fn count(self: Q, comptime col: Col) !u64 {
@@ -196,10 +199,17 @@ pub fn Query(comptime T: type, comptime R: type) type {
 
             var i: usize = 0;
             inline for (@typeInfo(State).Struct.fields) |f| {
-                if (comptime f.type == *RawPart) {
-                    if (@field(self.state, f.name)) |part| {
+                switch (f.type) {
+                    ?*const RawPart => if (@field(self.state, f.name)) |part| {
                         try part.bind(&stmt, &i);
-                    }
+                    },
+
+                    i32 => if (@field(self.state, f.name) >= 0) {
+                        try stmt.bind(i, @field(self.state, f.name));
+                        i += 1;
+                    },
+
+                    else => {},
                 }
             }
 
