@@ -46,7 +46,7 @@ pub const Statement = extern struct {
         };
     }
 
-    pub fn exec(self: *Statement, comptime V: type) !?V {
+    pub fn exec(self: *Statement) !void {
         while (try self.step()) {
             // SQLite needs this (should be harmless for others)
         }
