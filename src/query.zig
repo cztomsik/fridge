@@ -301,6 +301,8 @@ pub fn Query(comptime T: type, comptime R: type) type {
                 inline for (fields, 0..) |f, i| {
                     vals[i] = Value.from(@field(args, f.name), self.session.arena) catch @panic("OOM");
                 }
+
+                res.args = vals;
             }
 
             return res;

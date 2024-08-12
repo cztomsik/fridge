@@ -126,3 +126,30 @@ test "find(T, id)" {
         db.find(Person, 1),
     );
 }
+
+test "db.insert(T, data)" {
+    var db = try open();
+    defer close(&db);
+
+    try db.insert(Person, .{ .name = "Charlie" });
+    try t.expectEqualDeep(3, db.conn.lastInsertRowId());
+    try t.expectEqual(1, db.conn.rowsAffected());
+}
+
+test "db.update(T, id, data)" {
+    var db = try open();
+    defer close(&db);
+
+    try db.update(Person, 1, .{ .name = "Sarah" });
+    // try t.expectEqual(1, db.conn.rowsAffected());
+    // try t.expectEqualDeep(Person{ .id = 1, .name = "Sarah" }, db.find(Person, 1));
+}
+
+test "db.delete(T, id)" {
+    var db = try open();
+    defer close(&db);
+
+    try db.delete(Person, 1);
+    try t.expectEqual(1, db.conn.rowsAffected());
+    try t.expectEqual(null, db.find(Person, 1));
+}
