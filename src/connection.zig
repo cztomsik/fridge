@@ -19,6 +19,10 @@ pub const Connection = struct {
         };
     }
 
+    pub fn open(comptime T: type, options: T.Options) !Connection {
+        return util.upcast(try T.open(options), Connection);
+    }
+
     /// Executes all SQL statements in the given string.
     pub fn execAll(self: *Connection, sql: []const u8) Error!void {
         return self.vtable.execAll(self.handle, sql);
