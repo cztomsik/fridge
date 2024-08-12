@@ -71,3 +71,58 @@ pub const Session = struct {
         try self.query(T).where(.id, id).delete().exec();
     }
 };
+
+const t = std.testing;
+
+const Person = struct {
+    id: u32,
+    name: []const u8,
+};
+
+fn open() !Session {
+    var conn = try Connection.open(@import("sqlite.zig").SQLite3, .{ .filename = ":memory:" });
+    errdefer conn.close();
+
+    try conn.execAll(
+        \\CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT);
+        \\INSERT INTO Person (name) VALUES ('Alice');
+        \\INSERT INTO Person (name) VALUES ('Bob');
+    );
+
+    return Session.init(t.allocator, conn);
+}
+
+fn close(db: *Session) void {
+    db.deinit();
+    db.conn.close();
+}
+
+test "db.prepare()" {
+    var db = try open();
+    defer close(&db);
+
+    var stmt = try db.prepare("SELECT 1 + ?", .{1});
+    defer stmt.deinit();
+
+    try t.expectEqual(2, try stmt.value(u32));
+}
+
+test "db.query(T).findAll()" {
+    var db = try open();
+    defer close(&db);
+
+    try t.expectEqualDeep(&[_]Person{
+        .{ .id = 1, .name = "Alice" },
+        .{ .id = 2, .name = "Bob" },
+    }, db.query(Person).findAll());
+}
+
+test "find(T, id)" {
+    var db = try open();
+    defer close(&db);
+
+    try t.expectEqualDeep(
+        Person{ .id = 1, .name = "Alice" },
+        db.find(Person, 1),
+    );
+}

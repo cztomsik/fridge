@@ -83,7 +83,8 @@ pub const Statement = extern struct {
 
     fn column(self: *Statement, comptime V: type, index: usize) !V {
         if (comptime util.isString(V)) {
-            return (try self.vtable.column(self.handle, index, .string)).string;
+            const val = try self.vtable.column(self.handle, index, .string);
+            return self.session.?.arena.dupe(u8, val.string);
         }
 
         return switch (@typeInfo(V)) {
