@@ -4,7 +4,6 @@ const util = @import("util.zig");
 const Connection = @import("connection.zig").Connection;
 const Statement = @import("statement.zig").Statement;
 const Query = @import("query.zig").Query;
-const Repo = @import("repo.zig").Repo;
 
 pub const Session = struct {
     arena: std.mem.Allocator,
@@ -41,7 +40,25 @@ pub const Session = struct {
         return .{ .session = self };
     }
 
-    pub fn repo(self: *Session, comptime T: type) Repo(T) {
-        return .{ .session = self };
+    /// Find a record by its primary key.
+    pub fn find(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !?T {
+        return self.query(T).where(.id, id).findFirst();
+    }
+
+    /// Update a record by its primary key.
+    pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: T) !void {
+        return self.patch(T, id, data);
+    }
+
+    /// Patch a record by its primary key.
+    pub fn patch(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !void {
+        comptime util.checkFields(T, @TypeOf(data));
+
+        return self.query(T).where(.id, id).update(data).exec();
+    }
+
+    /// Delete a record by its primary key.
+    pub fn delete(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !void {
+        try self.query(T).where(.id, id).delete().exec();
     }
 };
