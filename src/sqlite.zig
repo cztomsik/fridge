@@ -81,6 +81,7 @@ const Stmt = opaque {
             .bool => .{ .bool = c.sqlite3_column_int(self.ptr(), i) != 0 },
             .int => .{ .int = c.sqlite3_column_int64(self.ptr(), i) },
             .float => .{ .float = c.sqlite3_column_double(self.ptr(), i) },
+            .string => .{ .string = c.sqlite3_column_text(self.ptr(), i)[0..@intCast(c.sqlite3_column_bytes(self.ptr(), i))] },
             else => @panic("TODO"),
         };
     }
