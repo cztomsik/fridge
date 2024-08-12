@@ -9,21 +9,20 @@ const c = @cImport(
 );
 
 pub const SQLite3 = opaque {
-    pub fn open(filename: [*:0]const u8) !*SQLite3 {
-        const flags = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX;
+    pub const Options = struct {
+        filename: [:0]const u8,
+        flags: c_int = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX,
+    };
 
+    pub fn open(opts: Options) !*SQLite3 {
         var db: ?*c.sqlite3 = null;
         errdefer {
             // SQLite may init the handle even if it fails to open the database.
             if (db) |pdb| _ = c.sqlite3_close(pdb);
         }
 
-        try check(c.sqlite3_open_v2(filename, &db, flags, null));
+        try check(c.sqlite3_open_v2(opts.filename.ptr, &db, opts.flags, null));
         return @ptrCast(db.?);
-    }
-
-    pub fn connection(self: *SQLite3) Connection {
-        return util.upcast(self, Connection);
     }
 
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {
