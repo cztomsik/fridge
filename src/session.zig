@@ -46,12 +46,7 @@ pub const Session = struct {
     }
 
     /// Update a record by its primary key.
-    pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: T) !void {
-        return self.patch(T, id, data);
-    }
-
-    /// Patch a record by its primary key.
-    pub fn patch(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !void {
+    pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !void {
         comptime util.checkFields(T, @TypeOf(data));
 
         return self.query(T).where(.id, id).update(data).exec();
