@@ -119,7 +119,7 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn valueRaw(self: Q, comptime V: type, expr: []const u8) !?V {
-            var stmt = try self.select(expr).limit(1).prepare();
+            var stmt = try self.selectRaw(expr).limit(1).prepare();
             defer stmt.deinit();
 
             return stmt.value(V);
