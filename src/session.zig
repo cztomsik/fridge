@@ -40,9 +40,23 @@ pub const Session = struct {
         return .{ .session = self };
     }
 
+    // TODO: this is useless without filter, ordering, paging, ...
+    //       and I'm not sure if we should order by primary key anyway
+    // /// Find all records of the given type.
+    // pub fn findAll(self: *Session, comptime T: type) ![]const T {
+    //     return self.query(T).findAll();
+    // }
+
     /// Find a record by its primary key.
     pub fn find(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !?T {
         return self.query(T).where(.id, id).findFirst();
+    }
+
+    /// Insert a new record.
+    pub fn insert(self: *Session, comptime T: type, data: anytype) !void {
+        comptime util.checkFields(T, @TypeOf(data));
+
+        return self.query(T).insert(data).exec();
     }
 
     /// Update a record by its primary key.
