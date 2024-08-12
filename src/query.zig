@@ -35,15 +35,16 @@ const RawPart = struct {
 };
 
 const State = struct {
+    // IMPORTANT: Keep this in correct order. See `writeSql()` below.
     kind: enum { select, insert, update, delete } = .select,
     columns: ?*const RawPart = null,
     from: ?*const RawPart = null,
+    data: ?*const RawPart = null,
     join: ?*const RawPart = null,
     where: ?*const RawPart = null,
     group_by: ?*const RawPart = null,
     order_by: ?*const RawPart = null,
     having: ?*const RawPart = null,
-    data: ?*const RawPart = null,
     limit: i32 = -1,
     offset: i32 = -1,
 };

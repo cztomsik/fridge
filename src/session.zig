@@ -141,8 +141,8 @@ test "db.update(T, id, data)" {
     defer close(&db);
 
     try db.update(Person, 1, .{ .name = "Sarah" });
-    // try t.expectEqual(1, db.conn.rowsAffected());
-    // try t.expectEqualDeep(Person{ .id = 1, .name = "Sarah" }, db.find(Person, 1));
+    try t.expectEqual(1, db.conn.rowsAffected());
+    try t.expectEqualDeep(Person{ .id = 1, .name = "Sarah" }, db.find(Person, 1));
 }
 
 test "db.delete(T, id)" {
