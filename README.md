@@ -3,7 +3,7 @@
 
 # Fridge
 
-A small, batteries-included database library for Zig. It provides an alloc-free
+A small, batteries-included database library for Zig. It provides a type-safe
 query builder, connection pooling, shorthands for common tasks, migrations, and
 more.
 
@@ -14,7 +14,7 @@ interacting with SQLite databases (for now).
 ## Features
 
 - [x] supports both bundling sqlite3 with your app or linking system sqlite3
-- [x] alloc-free query builder
+- [x] type-safe query builder
 - [x] connection pool
 - [x] shorthands for common tasks
 - [x] **migrations** inspired by [David Röthlisberger](https://david.rothlis.net/declarative-schema-migration-for-sqlite/)
@@ -143,6 +143,8 @@ _ = try session.findAll(fr.query(User));
 
 ## Migrations
 
+> **TODO: This only works for SQLite**
+
 There is a simple migration script which can be used with any DDL SQL file. It
 expects a `CREATE XXX` statement for every table, view, trigger, etc. and it
 will automatically create or drop respective objects. The only hard requirement
@@ -165,7 +167,7 @@ types or remove default values. It's not fulfledged migration system, but it
 works surprisingly well for most cases.
 
 ```zig
-try sqlite.migrate(allocator, "my.db", @embedFile("db_schema.sql"));
+try fr.migrate(allocator, "my.db", @embedFile("db_schema.sql"));
 ```
 
 ## License
