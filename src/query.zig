@@ -41,7 +41,7 @@ const State = struct {
     // from: ?*const RawPart = null, // TODO
     data: ?*const RawPart = null,
     on_conflict: ?*const RawPart = null,
-    join: ?*const RawPart = null, // TODO: builder method(s)
+    join: ?*const RawPart = null,
     where: ?*const RawPart = null,
     group_by: ?*const RawPart = null,
     order_by: ?*const RawPart = null,
@@ -69,6 +69,10 @@ pub fn Query(comptime T: type, comptime R: type) type {
 
         pub fn selectRaw(self: Q, columns: []const u8) Q {
             return self.append(.columns, ", ", columns, .{});
+        }
+
+        pub fn joinRaw(self: Q, join: []const u8) Q {
+            return self.append(.join, " JOIN ", join, .{});
         }
 
         pub fn where(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) Q {
@@ -370,6 +374,13 @@ test "query.select()" {
     try expectSql(
         db.query(Person).selectRaw("name, age"),
         "SELECT name, age FROM Person",
+    );
+}
+
+test "query.join()" {
+    try expectSql(
+        db.query(Person).joinRaw("Address ON Person.id = Address.person_id"),
+        "SELECT id, name, age FROM Person JOIN Address ON Person.id = Address.person_id",
     );
 }
 
