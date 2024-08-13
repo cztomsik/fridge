@@ -35,7 +35,9 @@ pub const Pool = struct {
     }
 
     pub fn getSession(self: *Pool, allocator: std.mem.Allocator) Error!Session {
-        return Session.init(allocator, self.getConnection());
+        var sess = try Session.init(allocator, try self.getConnection());
+        sess.pool = self;
+        return sess;
     }
 
     /// Get a connection from the pool. If the pool is empty, this will block
@@ -94,15 +96,34 @@ pub const Pool = struct {
     }
 };
 
+const t = std.testing;
+
 test {
-    var pool = Pool.init(@import("sqlite.zig").SQLite3, std.testing.allocator, 3, &.{
+    var pool = Pool.init(@import("sqlite.zig").SQLite3, t.allocator, 3, &.{
         .filename = ":memory:",
     });
     defer pool.deinit();
 
     const c1 = try pool.getConnection();
-    defer pool.releaseConnection(c1);
+    try t.expectEqual(1, pool.count);
+    try t.expectEqual(0, pool.conns.items.len);
+
+    pool.releaseConnection(c1);
+    try t.expectEqual(1, pool.count);
+    try t.expectEqual(1, pool.conns.items.len);
 
     const c2 = try pool.getConnection();
-    defer pool.releaseConnection(c2);
+    try t.expectEqual(1, pool.count);
+    try t.expectEqual(0, pool.conns.items.len);
+    try t.expectEqual(c1.handle, c2.handle);
+
+    const c3 = try pool.getConnection();
+    try t.expectEqual(2, pool.count);
+    try t.expectEqual(0, pool.conns.items.len);
+    try t.expect(c1.handle != c3.handle);
+
+    pool.releaseConnection(c2);
+    pool.releaseConnection(c3);
+    try t.expectEqual(2, pool.count);
+    try t.expectEqual(2, pool.conns.items.len);
 }
