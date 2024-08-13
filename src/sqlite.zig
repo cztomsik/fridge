@@ -66,7 +66,6 @@ const Stmt = opaque {
 
         try check(switch (arg) {
             .null => c.sqlite3_bind_null(self.ptr(), i),
-            .bool => |v| c.sqlite3_bind_int(self.ptr(), i, if (v) 1 else 0),
             .int => |v| c.sqlite3_bind_int64(self.ptr(), i, v),
             .float => |v| c.sqlite3_bind_double(self.ptr(), i, v),
             .string => |v| c.sqlite3_bind_text(self.ptr(), i, v.ptr, @intCast(v.len), null),
@@ -74,15 +73,15 @@ const Stmt = opaque {
         });
     }
 
-    pub fn column(self: *Stmt, index: usize, tag: std.meta.Tag(Value)) !Value {
+    pub fn column(self: *Stmt, index: usize) !Value {
         const i: c_int = @intCast(index);
 
-        return switch (tag) {
-            .bool => .{ .bool = c.sqlite3_column_int(self.ptr(), i) != 0 },
-            .int => .{ .int = c.sqlite3_column_int64(self.ptr(), i) },
-            .float => .{ .float = c.sqlite3_column_double(self.ptr(), i) },
-            .string => .{ .string = c.sqlite3_column_text(self.ptr(), i)[0..@intCast(c.sqlite3_column_bytes(self.ptr(), i))] },
-            else => @panic("TODO"),
+        return switch (c.sqlite3_column_type(self.ptr(), i)) {
+            c.SQLITE_NULL => .null,
+            c.SQLITE_INTEGER => .{ .int = c.sqlite3_column_int64(self.ptr(), i) },
+            c.SQLITE_FLOAT => .{ .float = c.sqlite3_column_double(self.ptr(), i) },
+            c.SQLITE_TEXT => .{ .string = c.sqlite3_column_text(self.ptr(), i)[0..@intCast(c.sqlite3_column_bytes(self.ptr(), i))] },
+            else => @panic("Unexpected column type"), // TODO: return error
         };
     }
 

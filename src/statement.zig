@@ -13,7 +13,7 @@ pub const Statement = extern struct {
     pub fn VTable(comptime H: type) type {
         return struct {
             bind: *const fn (self: H, index: usize, arg: Value) Error!void,
-            column: *const fn (self: H, index: usize, tag: std.meta.Tag(Value)) Error!Value,
+            column: *const fn (self: H, index: usize) Error!Value,
             step: *const fn (self: H) Error!bool,
             reset: *const fn (self: H) Error!void,
             finalize: *const fn (self: H) Error!void,
@@ -82,18 +82,10 @@ pub const Statement = extern struct {
     }
 
     fn column(self: *Statement, comptime V: type, index: usize) !V {
-        if (comptime util.isString(V)) {
-            const val = try self.vtable.column(self.handle, index, .string);
-            return self.session.?.arena.dupe(u8, val.string);
-        }
-
-        return switch (@typeInfo(V)) {
-            .Bool => (try self.vtable.column(self.handle, index, .bool)).bool,
-            .Int, .ComptimeInt => @intCast((try self.vtable.column(self.handle, index, .int)).int),
-            else => {
-                @panic("TODO");
-            },
-        };
+        // TODO: pass Value.hint(Value.FirstArg(V.fromValue)) to vtable.column()
+        //       so we don't need to get generic Value first; but this can wait
+        const val = try self.vtable.column(self.handle, index);
+        return val.into(V, self.session.?.arena);
     }
 
     pub fn reset(self: *Statement) !void {

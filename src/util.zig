@@ -68,6 +68,14 @@ pub fn isDense(comptime E: type) bool {
     return true;
 }
 
+pub fn isJsonRepresentable(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .Array, .Struct, .Union => true,
+        .Pointer => |p| p.size == .Slice,
+        else => false,
+    };
+}
+
 pub fn checkFields(comptime T: type, comptime D: type) void {
     comptime {
         outer: for (@typeInfo(D).Struct.fields) |f| {
