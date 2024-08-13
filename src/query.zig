@@ -60,7 +60,10 @@ pub fn Query(comptime T: type, comptime R: type) type {
 
         /// Change the return type of the query.
         pub fn as(self: Q, comptime R2: type) Query(T, R2) {
-            return @bitCast(self);
+            return .{
+                .session = self.session,
+                .state = self.state,
+            };
         }
 
         pub fn select(self: Q, comptime col: Col) Q {
