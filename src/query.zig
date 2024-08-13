@@ -19,7 +19,7 @@ pub fn Query(comptime T: type, comptime R: type) type {
         pub fn as(self: Q, comptime R2: type) Query(T, R2) {
             return .{
                 .session = self.session,
-                .state = self.state,
+                .tail = self.tail,
             };
         }
 
