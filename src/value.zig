@@ -24,6 +24,7 @@ pub const Value = union(enum) {
         }
 
         return switch (@typeInfo(T)) {
+            .Null => .null,
             .Optional => if (val) |v| from(v, arena) else .null,
             .Bool => .{ .int = if (val) 1 else 0 },
             .Int, .ComptimeInt => .{ .int = @intCast(val) },
