@@ -219,7 +219,7 @@ const Compiled = struct {
         var rest: ?*const RawPart = tail;
         while (rest) |p| : (rest = p.prev) {
             if (exclude & RawPart.maskBit(p.kind) > 0) continue;
-            if (p.mask()) |m| exclude |= m;
+            exclude |= p.mask();
 
             try parts.append(p);
         }
@@ -288,12 +288,12 @@ const RawPart = struct {
 
     // This works a bit like bloom filter, so parts later in the list can
     // replace or even discard previous parts.
-    fn mask(self: RawPart) ?u32 {
+    fn mask(self: RawPart) u32 {
         return switch (self.kind) {
             .select => maskBit(.default),
             inline .insert, .update, .delete => maskBit(.default) | maskBit(.select) | maskBit(.from),
             inline .from, .limit, .offset => |t| maskBit(t),
-            else => null,
+            else => 0,
         };
     }
 
