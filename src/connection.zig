@@ -19,7 +19,7 @@ pub const Connection = struct {
         };
     }
 
-    pub fn open(comptime T: type, options: T.Options) !Connection {
+    pub fn open(comptime T: type, options: T.Options) Error!Connection {
         return util.upcast(try T.open(options), Connection);
     }
 
