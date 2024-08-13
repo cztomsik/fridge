@@ -12,6 +12,7 @@ pub const SQLite3 = opaque {
     pub const Options = struct {
         filename: [:0]const u8,
         flags: c_int = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX,
+        busy_timeout: c_int = 0,
     };
 
     pub fn open(opts: Options) !*SQLite3 {
@@ -22,6 +23,7 @@ pub const SQLite3 = opaque {
         }
 
         try check(c.sqlite3_open_v2(opts.filename.ptr, &db, opts.flags, null));
+        try check(c.sqlite3_busy_timeout(db.?, opts.busy_timeout));
         return @ptrCast(db.?);
     }
 
