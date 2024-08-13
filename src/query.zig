@@ -35,12 +35,13 @@ const RawPart = struct {
 };
 
 const State = struct {
-    // IMPORTANT: Keep this in correct order. See `writeSql()` below.
+    // IMPORTANT: Keep this in correct order. See `prepare()` below.
     kind: enum { select, insert, update, delete } = .select,
     columns: ?*const RawPart = null,
-    from: ?*const RawPart = null,
+    // from: ?*const RawPart = null, // TODO
     data: ?*const RawPart = null,
-    join: ?*const RawPart = null,
+    on_conflict: ?*const RawPart = null,
+    join: ?*const RawPart = null, // TODO: builder method(s)
     where: ?*const RawPart = null,
     group_by: ?*const RawPart = null,
     order_by: ?*const RawPart = null,
@@ -172,12 +173,21 @@ pub fn Query(comptime T: type, comptime R: type) type {
             return self.replace(.data, self.raw(null, comptime "(" ++ util.columns(@TypeOf(data)) ++ ") VALUES (" ++ util.placeholders(@TypeOf(data)) ++ ")", data));
         }
 
+        pub fn onConflictRaw(self: Q, sql: []const u8, args: anytype) Q {
+            return self.append(.on_conflict, " ON CONFLICT ", sql, args);
+        }
+
         pub fn update(self: Q, data: anytype) Q {
             return self.replace(.kind, .update).setAll(data);
         }
 
-        // pub fn set(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) Q {}
-        // pub fn setRaw(self: Q, comptime col: Col, sql: []const u8) Q {}
+        pub fn set(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) Q {
+            return self.setRaw(@tagName(col) ++ " = ?", .{val});
+        }
+
+        pub fn setRaw(self: Q, sql: []const u8, args: anytype) Q {
+            return self.append(.data, ", ", sql, args);
+        }
 
         pub fn setAll(self: Q, data: anytype) Q {
             comptime util.checkFields(T, @TypeOf(data));
@@ -238,6 +248,11 @@ pub fn Query(comptime T: type, comptime R: type) type {
             try buf.appendSlice(util.tableName(T));
 
             if (self.state.data) |part| {
+                try part.writeSql(buf);
+            }
+
+            if (self.state.on_conflict) |part| {
+                try buf.appendSlice(" ON CONFLICT ");
                 try part.writeSql(buf);
             }
 
@@ -439,6 +454,13 @@ test "query.insert()" {
     );
 }
 
+test "query.insert().onConflictRaw()" {
+    try expectSql(
+        db.query(Person).insert(.{ .name = "Alice", .age = 20 }).onConflictRaw("DO NOTHING", .{}),
+        "INSERT INTO Person(name, age) VALUES (?, ?) ON CONFLICT DO NOTHING",
+    );
+}
+
 test "query.update()" {
     try expectSql(
         db.query(Person).update(.{ .name = "Alice" }),
@@ -458,6 +480,18 @@ test "query.update()" {
     try expectSql(
         db.query(Person).where(.age, 20).update(.{ .name = "Alice", .age = 21 }),
         "UPDATE Person SET name = ?, age = ? WHERE age = ?",
+    );
+}
+
+test "query.update().set()" {
+    try expectSql(
+        db.query(Person).update(.{ .name = "Alice" }).set(.age, 21),
+        "UPDATE Person SET name = ?, age = ?",
+    );
+
+    try expectSql(
+        db.query(Person).update(.{ .name = "Alice" }).setRaw("age = age + ?", .{1}),
+        "UPDATE Person SET name = ?, age = age + ?",
     );
 }
 
