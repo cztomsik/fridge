@@ -4,56 +4,13 @@ const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
 const Statement = @import("statement.zig").Statement;
 
-const RawPart = struct {
-    prev: ?*const RawPart = null,
-    sep: ?[]const u8 = null,
-    sql: []const u8,
-    args: []const Value = &.{},
-
-    fn writeSql(self: *const RawPart, buf: *std.ArrayList(u8)) !void {
-        if (self.prev) |prev| {
-            try prev.writeSql(buf);
-
-            if (self.sep) |s| {
-                try buf.appendSlice(s);
-            }
-        }
-
-        try buf.appendSlice(self.sql);
-    }
-
-    fn bind(self: *const RawPart, stmt: *Statement, i: *usize) !void {
-        if (self.prev) |prev| {
-            try prev.bind(stmt, i);
-        }
-
-        for (self.args) |v| {
-            try stmt.bind(i.*, v);
-            i.* = i.* + 1;
-        }
-    }
-};
-
-const State = struct {
-    // IMPORTANT: Keep this in correct order. See `prepare()` below.
-    kind: enum { select, insert, update, delete } = .select,
-    columns: ?*const RawPart = null,
-    // from: ?*const RawPart = null, // TODO
-    data: ?*const RawPart = null,
-    on_conflict: ?*const RawPart = null,
-    join: ?*const RawPart = null,
-    where: ?*const RawPart = null,
-    group_by: ?*const RawPart = null,
-    order_by: ?*const RawPart = null,
-    having: ?*const RawPart = null,
-    limit: i32 = -1,
-    offset: i32 = -1,
-};
-
 pub fn Query(comptime T: type, comptime R: type) type {
     return struct {
         session: *Session,
-        state: State = .{},
+        tail: *const RawPart = &.{
+            .kind = .from,
+            .sql = util.tableName(T),
+        },
 
         const Q = @This();
         const Col = std.meta.FieldEnum(T);
@@ -71,11 +28,11 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn selectRaw(self: Q, columns: []const u8) Q {
-            return self.append(.columns, ", ", columns, .{});
+            return self.append(.select, columns, .{});
         }
 
         pub fn joinRaw(self: Q, join: []const u8) Q {
-            return self.append(.join, " JOIN ", join, .{});
+            return self.append(.join, join, .{});
         }
 
         pub fn where(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) Q {
@@ -83,7 +40,7 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn whereRaw(self: Q, whr: []const u8, args: anytype) Q {
-            return self.append(.where, " AND ", whr, args);
+            return self.append(.and_where, whr, args);
         }
 
         pub fn orWhere(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) Q {
@@ -91,7 +48,7 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn orWhereRaw(self: Q, whr: []const u8, args: anytype) Q {
-            return self.append(.where, " OR ", whr, args);
+            return self.append(.or_where, whr, args);
         }
 
         pub fn groupBy(self: Q, col: Col) Q {
@@ -99,7 +56,7 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn groupByRaw(self: Q, group_by: []const u8) Q {
-            return self.append(.group_by, ", ", group_by, .{});
+            return self.append(.group_by, group_by, .{});
         }
 
         pub fn orderBy(self: Q, col: Col, ord: enum { asc, desc }) Q {
@@ -111,15 +68,15 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn orderByRaw(self: Q, order_by: []const u8) Q {
-            return self.append(.order_by, ", ", order_by, .{});
+            return self.append(.order_by, order_by, .{});
         }
 
         pub fn limit(self: Q, n: i32) Q {
-            return self.replace(.limit, n);
+            return self.append(.limit, " LIMIT ?", .{n});
         }
 
         pub fn offset(self: Q, i: i32) Q {
-            return self.replace(.offset, i);
+            return self.append(.offset, " OFFSET ?", .{i});
         }
 
         pub fn value(self: Q, comptime col: Col) !?std.meta.FieldType(T, col) {
@@ -175,21 +132,19 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn insert(self: Q, data: anytype) Q {
-            return self.replace(.kind, .insert).values(data);
+            return self.append(.insert, util.tableName(T), .{}).values(data);
         }
 
         pub fn values(self: Q, data: anytype) Q {
-            comptime util.checkFields(T, @TypeOf(data));
-
-            return self.replace(.data, self.raw(null, comptime "(" ++ util.columns(@TypeOf(data)) ++ ") VALUES (" ++ util.placeholders(@TypeOf(data)) ++ ")", data));
+            return self.append(.values, comptime "(" ++ util.columns(@TypeOf(data)) ++ ") VALUES (" ++ util.placeholders(@TypeOf(data)) ++ ")", data);
         }
 
         pub fn onConflictRaw(self: Q, sql: []const u8, args: anytype) Q {
-            return self.append(.on_conflict, " ON CONFLICT ", sql, args);
+            return self.append(.on_conflict, sql, args);
         }
 
         pub fn update(self: Q, data: anytype) Q {
-            return self.replace(.kind, .update).setAll(data);
+            return self.append(.update, util.tableName(T), .{}).setAll(data);
         }
 
         pub fn set(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) Q {
@@ -197,127 +152,41 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn setRaw(self: Q, sql: []const u8, args: anytype) Q {
-            return self.append(.data, ", ", sql, args);
+            return self.append(.set, sql, args);
         }
 
         pub fn setAll(self: Q, data: anytype) Q {
             comptime util.checkFields(T, @TypeOf(data));
 
-            return self.replace(.data, self.raw(null, comptime " SET " ++ util.setters(@TypeOf(data)), data));
+            return self.append(.set, util.setters(@TypeOf(data)), data);
         }
 
         pub fn delete(self: Q) Q {
-            return self.replace(.kind, .delete);
+            return self.append(.delete, util.tableName(T), .{});
         }
 
         pub fn prepare(self: Q) !Statement {
-            var buf = std.ArrayList(u8).init(self.session.arena);
-            defer buf.deinit();
-
-            try self.writeSql(&buf);
-
-            var stmt = try self.session.prepare(buf.items, .{});
+            var compiled = try self.compile();
+            var stmt = try self.session.prepare(try compiled.sql(), .{});
             errdefer stmt.deinit();
 
-            var i: usize = 0;
-            inline for (@typeInfo(State).Struct.fields) |f| {
-                switch (f.type) {
-                    ?*const RawPart => if (@field(self.state, f.name)) |part| {
-                        try part.bind(&stmt, &i);
-                    },
-
-                    i32 => if (@field(self.state, f.name) >= 0) {
-                        try stmt.bind(i, @field(self.state, f.name));
-                        i += 1;
-                    },
-
-                    else => {},
-                }
-            }
-
+            try compiled.bind(&stmt);
             return stmt;
         }
 
-        pub fn writeSql(self: Q, buf: *std.ArrayList(u8)) !void {
-            try buf.appendSlice(switch (self.state.kind) {
-                .select => "SELECT ",
-                .insert => "INSERT INTO ",
-                .update => "UPDATE ",
-                .delete => "DELETE FROM ",
-            });
-
-            if (self.state.kind == .select) {
-                if (self.state.columns) |part| {
-                    try part.writeSql(buf);
-                } else {
-                    try buf.appendSlice(util.columns(R));
-                }
-
-                try buf.appendSlice(" FROM ");
-            }
-
-            try buf.appendSlice(util.tableName(T));
-
-            if (self.state.data) |part| {
-                try part.writeSql(buf);
-            }
-
-            if (self.state.on_conflict) |part| {
-                try buf.appendSlice(" ON CONFLICT ");
-                try part.writeSql(buf);
-            }
-
-            if (self.state.join) |part| {
-                try buf.appendSlice(" JOIN ");
-                try part.writeSql(buf);
-            }
-
-            if (self.state.where) |part| {
-                try buf.appendSlice(" WHERE ");
-                try part.writeSql(buf);
-            }
-
-            if (self.state.group_by) |part| {
-                try buf.appendSlice(" GROUP BY ");
-                try part.writeSql(buf);
-            }
-
-            if (self.state.order_by) |part| {
-                try buf.appendSlice(" ORDER BY ");
-                try part.writeSql(buf);
-            }
-
-            if (self.state.having) |part| {
-                try buf.appendSlice(" HAVING ");
-                try part.writeSql(buf);
-            }
-
-            if (self.state.limit >= 0) {
-                try buf.appendSlice(" LIMIT ?");
-            }
-
-            if (self.state.offset >= 0) {
-                try buf.appendSlice(" OFFSET ?");
-            }
+        fn compile(self: Q) !Compiled {
+            return Compiled.compile(
+                self.tail,
+                comptime &.{ .kind = .select, .sql = util.columns(T) },
+                self.session.arena,
+            );
         }
 
-        fn replace(self: Q, comptime field: std.meta.FieldEnum(State), val: std.meta.FieldType(State, field)) Q {
-            var copy = self;
-            @field(copy.state, @tagName(field)) = val;
-            return copy;
-        }
-
-        fn append(self: Q, comptime field: std.meta.FieldEnum(State), sep: ?[]const u8, sql: []const u8, args: anytype) Q {
-            const part = self.raw(sep, sql, args);
-            part.prev = @field(self.state, @tagName(field));
-
-            return self.replace(field, part);
-        }
-
-        fn raw(self: Q, sep: ?[]const u8, sql: []const u8, args: anytype) *RawPart {
-            const res = self.session.arena.create(RawPart) catch @panic("OOM");
-            res.* = .{
-                .sep = sep,
+        fn append(self: Q, kind: RawPart.Kind, sql: []const u8, args: anytype) Q {
+            const part = self.session.arena.create(RawPart) catch @panic("OOM");
+            part.* = .{
+                .prev = self.tail,
+                .kind = kind,
                 .sql = sql,
             };
 
@@ -329,13 +198,140 @@ pub fn Query(comptime T: type, comptime R: type) type {
                     vals[i] = Value.from(@field(args, f.name), self.session.arena) catch @panic("OOM");
                 }
 
-                res.args = vals;
+                part.args = vals;
             }
 
-            return res;
+            var copy = self;
+            copy.tail = part;
+            return copy;
         }
     };
 }
+
+const Compiled = struct {
+    parts: std.ArrayList(*const RawPart),
+
+    fn compile(tail: *const RawPart, default_select: *const RawPart, arena: std.mem.Allocator) !Compiled {
+        var parts = try std.ArrayList(*const RawPart).initCapacity(arena, 16);
+        errdefer parts.deinit();
+
+        var exclude: u32 = 0;
+        var rest: ?*const RawPart = tail;
+        while (rest) |p| : (rest = p.prev) {
+            if (exclude & RawPart.maskBit(p.kind) > 0) continue;
+            if (p.mask()) |m| exclude |= m;
+
+            try parts.append(p);
+        }
+
+        if (exclude & RawPart.maskBit(.default) == 0) {
+            try parts.append(default_select);
+        }
+
+        std.sort.insertion(*const RawPart, parts.items, {}, RawPart.cmp);
+        return .{ .parts = parts };
+    }
+
+    pub fn deinit(self: *Compiled) void {
+        self.parts.deinit();
+    }
+
+    pub fn sql(self: *Compiled) ![]const u8 {
+        var buf = std.ArrayList(u8).init(self.parts.allocator);
+        defer buf.deinit();
+
+        try self.writeSql(&buf);
+        return buf.toOwnedSlice();
+    }
+
+    pub fn writeSql(self: *Compiled, buf: *std.ArrayList(u8)) !void {
+        var pos: i32 = -1;
+
+        for (self.parts.items) |part| {
+            if (part.order() > pos) {
+                if (part.prefix()) |p| try buf.appendSlice(p);
+                pos = part.order();
+            } else {
+                if (part.separator()) |s| try buf.appendSlice(s);
+            }
+
+            try buf.appendSlice(part.sql);
+        }
+    }
+
+    fn bind(self: *Compiled, stmt: *Statement) !void {
+        var i: usize = 0;
+
+        for (self.parts.items) |part| {
+            for (part.args) |arg| {
+                try stmt.bind(i, arg);
+                i += 1;
+            }
+        }
+    }
+};
+
+const RawPart = struct {
+    prev: ?*const RawPart = null,
+    kind: Kind,
+    sql: []const u8,
+    args: []const Value = &.{},
+
+    const Kind = enum { default, select, from, insert, values, on_conflict, update, set, delete, join, and_where, or_where, group_by, order_by, limit, offset };
+
+    fn order(self: RawPart) i32 {
+        return switch (self.kind) {
+            .or_where => @intFromEnum(Kind.and_where),
+            inline else => |t| @intFromEnum(t),
+        };
+    }
+
+    // This works a bit like bloom filter, so parts later in the list can
+    // replace or even discard previous parts.
+    fn mask(self: RawPart) ?u32 {
+        return switch (self.kind) {
+            .select => maskBit(.default),
+            inline .insert, .update, .delete => maskBit(.default) | maskBit(.select) | maskBit(.from),
+            inline .from, .limit, .offset => |t| maskBit(t),
+            else => null,
+        };
+    }
+
+    fn maskBit(kind: Kind) u32 {
+        return @as(u32, 1) << @intFromEnum(kind);
+    }
+
+    fn prefix(self: RawPart) ?[]const u8 {
+        return switch (self.kind) {
+            .values, .limit, .offset => null,
+            .select => "SELECT ",
+            .from => " FROM ",
+            .insert => "INSERT INTO ",
+            .update => "UPDATE ",
+            .set => " SET ",
+            .on_conflict => " ON CONFLICT ",
+            .delete => "DELETE FROM ",
+            .and_where, .or_where => " WHERE ",
+            .group_by => " GROUP BY ",
+            .order_by => " ORDER BY ",
+            else => " ",
+        };
+    }
+
+    fn separator(self: RawPart) ?[]const u8 {
+        return switch (self.kind) {
+            .select, .set, .group_by, .order_by => ", ",
+            .on_conflict => " ON CONFLICT ",
+            .and_where => " AND ",
+            .or_where => " OR ",
+            else => null,
+        };
+    }
+
+    fn cmp(_: void, a: *const RawPart, b: *const RawPart) bool {
+        return a.order() <= b.order();
+    }
+};
 
 const Person = struct {
     id: u32,
@@ -343,17 +339,14 @@ const Person = struct {
     age: u8,
 };
 
-var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-var db: Session = .{ .arena = arena.allocator(), .conn = undefined };
+var _arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+var db: Session = .{ .arena = _arena.allocator(), .conn = undefined };
 
 fn expectSql(q: Query(Person, Person), sql: []const u8) !void {
-    defer _ = arena.reset(.free_all);
+    defer _ = _arena.reset(.free_all);
 
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    defer buf.deinit();
-
-    try q.writeSql(&buf);
-    try std.testing.expectEqualStrings(sql, buf.items);
+    var compiled = try q.compile();
+    try std.testing.expectEqualStrings(sql, try compiled.sql());
 }
 
 test "query" {
@@ -382,7 +375,7 @@ test "query.select()" {
 
 test "query.join()" {
     try expectSql(
-        db.query(Person).joinRaw("Address ON Person.id = Address.person_id"),
+        db.query(Person).joinRaw("JOIN Address ON Person.id = Address.person_id"),
         "SELECT id, name, age FROM Person JOIN Address ON Person.id = Address.person_id",
     );
 }
@@ -502,6 +495,11 @@ test "query.update()" {
 }
 
 test "query.update().set()" {
+    // try expectSql(
+    //     db.query(Person).update(.{}).set(.age, 21),
+    //     "UPDATE Person SET age = ?",
+    // );
+
     try expectSql(
         db.query(Person).update(.{ .name = "Alice" }).set(.age, 21),
         "UPDATE Person SET name = ?, age = ?",
