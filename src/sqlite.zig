@@ -83,6 +83,7 @@ const Stmt = opaque {
             c.SQLITE_INTEGER => .{ .int = c.sqlite3_column_int64(self.ptr(), i) },
             c.SQLITE_FLOAT => .{ .float = c.sqlite3_column_double(self.ptr(), i) },
             c.SQLITE_TEXT => .{ .string = c.sqlite3_column_text(self.ptr(), i)[0..@intCast(c.sqlite3_column_bytes(self.ptr(), i))] },
+            c.SQLITE_BLOB => .{ .blob = @as([*c]const u8, @ptrCast(c.sqlite3_column_blob(self.ptr(), i)))[0..@intCast(c.sqlite3_column_bytes(self.ptr(), i))] },
             else => @panic("Unexpected column type"), // TODO: return error
         };
     }
