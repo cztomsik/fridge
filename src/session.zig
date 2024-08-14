@@ -134,7 +134,7 @@ test "db.query(T).findAll()" {
     }, db.query(Person).all());
 }
 
-test "find(T, id)" {
+test "db.find(T, id)" {
     var db = try open();
     defer close(&db);
 
