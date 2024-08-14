@@ -73,19 +73,19 @@ pub const Session = struct {
     pub fn insert(self: *Session, comptime T: type, data: anytype) !void {
         comptime util.checkFields(T, @TypeOf(data));
 
-        return self.query(T).insert(data).exec();
+        return self.query(T).insert(data);
     }
 
     /// Update a record by its primary key.
     pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !void {
         comptime util.checkFields(T, @TypeOf(data));
 
-        return self.query(T).where(.id, id).update(data).exec();
+        return self.query(T).where(.id, id).update(data);
     }
 
     /// Delete a record by its primary key.
     pub fn delete(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !void {
-        try self.query(T).where(.id, id).delete().exec();
+        try self.query(T).where(.id, id).delete();
     }
 };
 
