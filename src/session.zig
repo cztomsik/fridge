@@ -66,7 +66,7 @@ pub const Session = struct {
 
     /// Find a record by its primary key.
     pub fn find(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !?T {
-        return self.query(T).firstWhere(.id, id);
+        return self.query(T).find(id);
     }
 
     /// Insert a new record.
@@ -131,7 +131,7 @@ test "db.query(T).findAll()" {
     try t.expectEqualDeep(&[_]Person{
         .{ .id = 1, .name = "Alice" },
         .{ .id = 2, .name = "Bob" },
-    }, db.query(Person).all());
+    }, db.query(Person).findAll());
 }
 
 test "db.find(T, id)" {

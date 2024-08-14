@@ -113,18 +113,22 @@ pub fn Query(comptime T: type, comptime R: type) type {
             try stmt.exec();
         }
 
-        pub fn first(self: Q) !?R {
+        pub fn find(self: Q, id: std.meta.FieldType(T, .id)) !?R {
+            return self.findBy(.id, id);
+        }
+
+        pub fn findBy(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) !?R {
+            return self.where(col, val).findFirst();
+        }
+
+        pub fn findFirst(self: Q) !?R {
             var stmt = try self.limit(1).prepare();
             defer stmt.deinit();
 
             return stmt.row(R);
         }
 
-        pub fn firstWhere(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) !?R {
-            return self.where(col, val).first();
-        }
-
-        pub fn all(self: Q) ![]const R {
+        pub fn findAll(self: Q) ![]const R {
             var stmt = try self.prepare();
             defer stmt.deinit();
 
