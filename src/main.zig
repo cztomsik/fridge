@@ -1,14 +1,16 @@
 const std = @import("std");
 
-pub const SQLite3 = @import("sqlite.zig").SQLite3;
-pub const Blob = @import("sqlite.zig").Blob;
-pub const Statement = @import("sqlite.zig").Statement;
 pub const Pool = @import("pool.zig").Pool;
+pub const SQLite3 = @import("sqlite.zig").SQLite3;
+
+pub const Value = @import("value.zig").Value;
+pub const Blob = @import("value.zig").Blob;
+pub const Connection = @import("connection.zig").Connection;
+pub const Statement = @import("statement.zig").Statement;
 pub const Session = @import("session.zig").Session;
+pub const Query = @import("query.zig").Query;
 
-pub const raw = @import("dsl.zig").raw;
-pub const query = @import("dsl.zig").query;
-
+// TODO: this is SQLite only and maybe it should be elsewhere when we support other databases
 pub const migrate = @import("migrate.zig").migrate;
 
 test {

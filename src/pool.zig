@@ -1,55 +1,67 @@
 const std = @import("std");
-const sqlite = @import("sqlite.zig");
-
-pub const PoolOptions = struct {
-    count: usize = 1,
-    busy_timeout: u32 = 1_000,
-};
+const Connection = @import("connection.zig").Connection;
+const Session = @import("session.zig").Session;
 
 /// A simple connection pool. This is especially useful for web servers where
 /// each request needs its own "session" with separate transactions. The pool
 /// makes it easy to obtain a connection at the start of a request and release
 /// it at the end.
 pub const Pool = struct {
-    allocator: std.mem.Allocator,
-    conns: []sqlite.SQLite3,
+    conns: std.ArrayList(Connection),
+    factory: *const fn (opts: *const anyopaque) Error!Connection,
+    opts: *const anyopaque,
+    max_count: usize,
+    count: usize = 0,
     mutex: std.Thread.Mutex = .{},
     wait: std.Thread.Condition = .{},
-    index: usize,
 
-    /// Initialize a connection pool with `count` connections opened to the
-    /// sqlite database at `filename`.
-    pub fn init(allocator: std.mem.Allocator, filename: [*:0]const u8, options: PoolOptions) !Pool {
-        const conns = try allocator.alloc(sqlite.SQLite3, options.count);
-        errdefer allocator.free(conns);
+    const Error = error{ DbError, OutOfMemory, PoolClosing };
 
-        for (conns) |*conn| {
-            conn.* = try sqlite.SQLite3.open(filename);
-
-            try conn.setBusyTimeout(options.busy_timeout);
-        }
+    /// Initialize a connection pool with capacity for `max_count` connections
+    /// which will be created using the provided driver-specific `options`.
+    pub fn init(comptime T: type, allocator: std.mem.Allocator, max_count: usize, options: *const T.Options) Pool {
+        const H = struct {
+            fn open(opts: *const anyopaque) Error!Connection {
+                return Connection.open(T, @as(*const T.Options, @ptrCast(@alignCast(opts))).*);
+            }
+        };
 
         return .{
-            .allocator = allocator,
-            .conns = conns,
-            .index = conns.len,
+            .conns = std.ArrayList(Connection).init(allocator),
+            .opts = options,
+            .factory = H.open,
+            .max_count = max_count,
         };
+    }
+
+    pub fn getSession(self: *Pool, allocator: std.mem.Allocator) Error!Session {
+        var sess = try Session.init(allocator, try self.getConnection());
+        sess.pool = self;
+        return sess;
     }
 
     /// Get a connection from the pool. If the pool is empty, this will block
     /// until a connection is available.
-    pub fn get(self: *Pool) sqlite.SQLite3 {
+    pub fn getConnection(self: *Pool) Error!Connection {
         self.mutex.lock();
 
         while (true) {
-            if (self.index > 0) {
-                self.index -= 1;
-
-                // Copy the connection out of the pool, after this point the
-                // the original index may be overwritten.
-                const conn = self.conns[self.index];
+            if (self.conns.popOrNull()) |conn| {
                 self.mutex.unlock();
                 return conn;
+            }
+
+            if (self.count <= self.max_count) {
+                const conn = try self.factory(self.opts);
+                self.count += 1;
+
+                self.mutex.unlock();
+                return conn;
+            }
+
+            if (self.max_count == 0) {
+                self.mutex.unlock();
+                return error.PoolClosing;
             }
 
             self.wait.wait(&self.mutex);
@@ -60,25 +72,58 @@ pub const Pool = struct {
     }
 
     /// Put the connection back into the pool and notify any waiting threads.
-    pub fn release(self: *Pool, conn: sqlite.SQLite3) void {
+    pub fn releaseConnection(self: *Pool, conn: Connection) void {
         self.mutex.lock();
-
-        // Push to the "stack"
-        self.conns[self.index] = conn;
-        self.index += 1;
-
+        self.conns.append(conn) catch unreachable;
         self.mutex.unlock();
         self.wait.signal();
     }
 
     /// Deinitialize the pool and close all connections.
     pub fn deinit(self: *Pool) void {
-        // Make sure nobody is using the pool & close all connections
-        for (0..self.conns.len) |_| {
-            var conn = self.get();
+        // Make sure no new connections are created
+        self.mutex.lock();
+        self.max_count = 0;
+        self.mutex.unlock();
+
+        // Reserve all connections and close them
+        for (0..self.count) |_| {
+            var conn = self.getConnection() catch unreachable;
             conn.close();
         }
 
-        self.allocator.free(self.conns);
+        self.conns.deinit();
     }
 };
+
+const t = std.testing;
+
+test {
+    var pool = Pool.init(@import("sqlite.zig").SQLite3, t.allocator, 3, &.{
+        .filename = ":memory:",
+    });
+    defer pool.deinit();
+
+    const c1 = try pool.getConnection();
+    try t.expectEqual(1, pool.count);
+    try t.expectEqual(0, pool.conns.items.len);
+
+    pool.releaseConnection(c1);
+    try t.expectEqual(1, pool.count);
+    try t.expectEqual(1, pool.conns.items.len);
+
+    const c2 = try pool.getConnection();
+    try t.expectEqual(1, pool.count);
+    try t.expectEqual(0, pool.conns.items.len);
+    try t.expectEqual(c1.handle, c2.handle);
+
+    const c3 = try pool.getConnection();
+    try t.expectEqual(2, pool.count);
+    try t.expectEqual(0, pool.conns.items.len);
+    try t.expect(c1.handle != c3.handle);
+
+    pool.releaseConnection(c2);
+    pool.releaseConnection(c3);
+    try t.expectEqual(2, pool.count);
+    try t.expectEqual(2, pool.conns.items.len);
+}

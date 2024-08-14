@@ -3,35 +3,29 @@
 // different
 
 const std = @import("std");
-const dsl = @import("dsl.zig");
 const SQLite3 = @import("sqlite.zig").SQLite3;
 const Session = @import("session.zig").Session;
 const log = std.log.scoped(.db_migrate);
 
-pub fn migrate(allocator: std.mem.Allocator, filename: [*:0]const u8, ddl: []const u8) !void {
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-
-    const mem = try SQLite3.open(":memory:");
-    var pristine = Session.fromConnection(arena.allocator(), mem);
+pub fn migrate(allocator: std.mem.Allocator, filename: [:0]const u8, ddl: []const u8) !void {
+    var pristine = try Session.open(SQLite3, allocator, .{ .filename = ":memory:" });
     defer pristine.deinit();
 
-    const conn = try SQLite3.open(filename);
-    var db = Session.fromConnection(arena.allocator(), conn);
+    var db = try Session.open(SQLite3, allocator, .{ .filename = filename });
     defer db.deinit();
-
-    // Make sure we're in WAL mode and synchronous
-    // (this is important for data integrity)
-    try db.exec("PRAGMA journal_mode = WAL");
-    try db.exec("PRAGMA synchronous = FULL");
 
     // Create empty database with the desired schema
     log.debug("-- Creating pristine database", .{});
     try pristine.conn.execAll(ddl);
 
+    // Make sure we're in WAL mode and synchronous
+    // (this is important for data integrity)
+    try db.conn.execAll("PRAGMA journal_mode = WAL");
+    try db.conn.execAll("PRAGMA synchronous = FULL");
+
     // Start a transaction and disable foreign key checks
-    try db.exec("BEGIN");
-    try db.exec("PRAGMA foreign_keys = OFF");
+    try db.conn.execAll("BEGIN");
+    try db.conn.execAll("PRAGMA foreign_keys = OFF");
 
     // Migrate each object type
     inline for (.{ "table", "view", "trigger", "index" }) |kind| {
@@ -39,20 +33,16 @@ pub fn migrate(allocator: std.mem.Allocator, filename: [*:0]const u8, ddl: []con
     }
 
     // Re-enable foreign key checks and commit
-    try db.exec("PRAGMA foreign_keys = ON");
-    try db.exec("COMMIT");
+    try db.conn.execAll("PRAGMA foreign_keys = ON");
+    try db.conn.execAll("COMMIT");
 }
 
 fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
-    const objects = dsl.query(sqlite_master)
-        .where(.{ .type = kind })
-        .where(dsl.raw("name NOT LIKE 'sqlite_%'", .{}));
-
-    for (try pristine.findAll(objects)) |obj| {
+    for (try sqlite_master.objects(pristine, kind)) |obj| {
         // Check if object exists
-        const curr = try db.findBy(sqlite_master, .{ .type = kind, .name = obj.name }) orelse {
+        const curr = try db.query(sqlite_master).where(.type, kind).findBy(.name, obj.name) orelse {
             logObject(obj, .create);
-            try db.exec(obj.sql);
+            try db.conn.execAll(obj.sql);
             continue;
         };
 
@@ -67,51 +57,48 @@ fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
 
             // First, create a temp table with the new schema
             const temp_sql = try std.fmt.allocPrint(db.arena, "CREATE TABLE temp {s}", .{obj.sql[std.mem.indexOf(u8, obj.sql, "(").?..]});
-            try db.exec(temp_sql);
+            try db.conn.execAll(temp_sql);
 
             // We want to copy data from the old table to the temp table so we need
             // to know which columns are common to both and we need to do it in a
             // new block so it gets deinitialized and we can then drop and rename
             // the temp table
             {
-                var stmt = try db.prepare(dsl.raw("SELECT GROUP_CONCAT(name) FROM (SELECT name FROM pragma_table_xinfo(?) INTERSECT SELECT name FROM pragma_table_info('temp'))", .{obj.name}));
+                var stmt = try db.prepare("SELECT GROUP_CONCAT(name) FROM (SELECT name FROM pragma_table_xinfo(?) INTERSECT SELECT name FROM pragma_table_info('temp'))", .{obj.name});
                 defer stmt.deinit();
 
-                _ = try stmt.step();
-                const cols = try stmt.column([]const u8, 0);
-
                 // Copy data from old table to temp table
-                const copy_sql = try std.fmt.allocPrint(db.arena, "INSERT INTO temp({0s}) SELECT {0s} FROM {1s}", .{ cols, obj.name });
-                try db.exec(copy_sql);
+                const copy_sql = try std.fmt.allocPrint(db.arena, "INSERT INTO temp({0s}) SELECT {0s} FROM {1s}", .{ (try stmt.value([]const u8)).?, obj.name });
+                try db.conn.execAll(copy_sql);
             }
 
             // Drop old table
             const drop_sql = try std.fmt.allocPrint(db.arena, "DROP TABLE {s}", .{obj.name});
-            try db.exec(drop_sql);
+            try db.conn.execAll(drop_sql);
 
             // Rename temp table to old table
             const rename_sql = try std.fmt.allocPrint(db.arena, "ALTER TABLE temp RENAME TO {s}", .{obj.name});
-            try db.exec(rename_sql);
+            try db.conn.execAll(rename_sql);
         } else {
             logObject(obj, .replace);
 
             // Drop old object
             const drop_sql = try std.fmt.allocPrint(db.arena, "DROP {s} {s}", .{ kind, obj.name });
-            try db.exec(drop_sql);
+            try db.conn.execAll(drop_sql);
 
             // Create new object
-            try db.exec(obj.sql);
+            try db.conn.execAll(obj.sql);
         }
     }
 
     // Now we can check for extraneous objects and drop them
 
-    for (try db.findAll(objects)) |obj| {
-        if (try pristine.findBy(sqlite_master, .{ .type = kind, .name = obj.name }) == null) {
+    for (try sqlite_master.objects(db, kind)) |obj| {
+        if (try pristine.query(sqlite_master).where(.type, kind).findBy(.name, obj.name) == null) {
             logObject(obj, .drop);
 
             const drop_sql = try std.fmt.allocPrint(db.arena, "DROP {s} {s}", .{ kind, obj.name });
-            try db.exec(drop_sql);
+            try db.conn.execAll(drop_sql);
         }
     }
 }
@@ -124,4 +111,11 @@ const sqlite_master = struct {
     type: []const u8,
     name: []const u8,
     sql: []const u8,
+
+    fn objects(db: *Session, kind: []const u8) ![]const sqlite_master {
+        return db.query(sqlite_master)
+            .where(.type, kind)
+            .whereRaw("name NOT LIKE ?", .{"sqlite_%"})
+            .findAll();
+    }
 };

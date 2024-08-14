@@ -1,173 +1,101 @@
-const std = @import("std");
+pub const std = @import("std");
 const util = @import("util.zig");
-const log = std.log.scoped(.sqlite);
+const Value = @import("value.zig").Value;
+const Connection = @import("connection.zig").Connection;
+const Statement = @import("statement.zig").Statement;
 
 const c = @cImport(
     @cInclude("sqlite3.h"),
 );
 
-pub const migrate = @import("migrate.zig").migrate;
+pub const SQLite3 = opaque {
+    pub const Options = struct {
+        filename: [:0]const u8,
+        flags: c_int = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX,
+        busy_timeout: c_int = 0,
+    };
 
-/// Convenience wrapper for a blob of data.
-pub const Blob = struct { bytes: []const u8 };
-
-/// Low-level SQLite database connection. It's main purpose is to provide a
-/// way to prepare statements.
-pub const SQLite3 = struct {
-    db: *c.sqlite3,
-
-    /// Opens a database connection in read/write mode, creating the file if it
-    /// doesn't exist. The connection is safe to use from multiple threads and
-    /// will serialize access to the database.
-    pub fn open(filename: [*:0]const u8) !SQLite3 {
-        const flags = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX;
-
+    pub fn open(opts: Options) !*SQLite3 {
         var db: ?*c.sqlite3 = null;
         errdefer {
             // SQLite may init the handle even if it fails to open the database.
-            if (db) |ptr| _ = c.sqlite3_close(ptr);
+            if (db) |pdb| _ = c.sqlite3_close(pdb);
         }
 
-        try check(c.sqlite3_open_v2(filename, &db, flags, null));
-
-        return .{
-            .db = db.?,
-        };
+        try check(c.sqlite3_open_v2(opts.filename.ptr, &db, opts.flags, null));
+        try check(c.sqlite3_busy_timeout(db.?, opts.busy_timeout));
+        return @ptrCast(db.?);
     }
 
-    /// Closes the database connection.
-    pub fn close(self: *SQLite3) void {
-        _ = c.sqlite3_close(self.db);
-    }
-
-    /// Sets the busy timeout in milliseconds. 0 means no timeout.
-    pub fn setBusyTimeout(self: *SQLite3, ms: u32) !void {
-        try check(c.sqlite3_busy_timeout(self.db, @intCast(ms)));
-    }
-
-    /// Executes all the SQL statements in the given string, ignoring any rows
-    /// they return.
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {
-        var next = std.mem.trimRight(u8, sql, " \n\t");
+        const csql = try std.heap.c_allocator.dupeZ(u8, sql);
+        defer std.heap.c_allocator.free(csql);
 
-        while (true) {
-            var stmt = try self.prepare(next);
-            defer stmt.deinit();
-
-            try stmt.exec();
-            next = stmt.tail orelse return;
-        }
+        try check(c.sqlite3_exec(self.ptr(), csql, null, null, null));
     }
 
-    /// Creates a prepared statement from the given SQL.
     pub fn prepare(self: *SQLite3, sql: []const u8) !Statement {
-        errdefer {
-            log.debug("{s}", .{c.sqlite3_errmsg(self.db)});
-            log.debug("Failed to prepare SQL: {s}\n", .{sql});
-        }
-
         var stmt: ?*c.sqlite3_stmt = null;
-        var tail: [*c]const u8 = null;
-        try check(c.sqlite3_prepare_v2(self.db, sql.ptr, @intCast(sql.len), &stmt, &tail));
+        try check(c.sqlite3_prepare_v2(self.ptr(), sql.ptr, @intCast(sql.len), &stmt, null));
 
-        return .{
-            .stmt = stmt.?,
-            .tail = if (tail != null and tail != sql.ptr + sql.len) sql[@intFromPtr(tail) - @intFromPtr(sql.ptr) ..] else null,
-        };
+        return util.upcast(@as(*Stmt, @ptrCast(stmt.?)), Statement);
     }
 
-    /// Returns the row ID of the most recent successful INSERT into the
-    /// database.
-    pub fn lastInsertRowId(self: *SQLite3) !i64 {
-        return c.sqlite3_last_insert_rowid(self.db);
-    }
-
-    /// Returns the number of rows affected by the last INSERT, UPDATE or
-    /// DELETE statement.
     pub fn rowsAffected(self: *SQLite3) !usize {
-        return @intCast(c.sqlite3_changes(self.db));
+        return @intCast(c.sqlite3_changes(self.ptr()));
+    }
+
+    pub fn lastInsertRowId(self: *SQLite3) !i64 {
+        return c.sqlite3_last_insert_rowid(self.ptr());
+    }
+
+    pub fn lastError(self: *SQLite3) []const u8 {
+        return std.mem.span(c.sqlite3_errmsg(self.ptr()));
+    }
+
+    pub fn close(self: *SQLite3) void {
+        _ = c.sqlite3_close(self.ptr());
+    }
+
+    inline fn ptr(self: *SQLite3) *c.sqlite3 {
+        return @ptrCast(self);
     }
 };
 
-/// A prepared statement. This is a low-level interface which keeps the SQLite
-/// locked until the `deinit()` or `reset()` is called.
-pub const Statement = struct {
-    stmt: *c.sqlite3_stmt,
-    tail: ?[]const u8,
-
-    /// Deinitializes the prepared statement.
-    pub fn deinit(self: *Statement) void {
-        _ = c.sqlite3_finalize(self.stmt);
-    }
-
-    /// Binds the given argument to the prepared statement.
-    pub fn bind(self: *Statement, index: usize, arg: anytype) !void {
+const Stmt = opaque {
+    pub fn bind(self: *Stmt, index: usize, arg: Value) !void {
         const i: c_int = @intCast(index + 1);
 
-        try check(switch (@TypeOf(arg)) {
-            @TypeOf(null) => c.sqlite3_bind_null(self.stmt, i),
-            bool => c.sqlite3_bind_int(self.stmt, i, if (arg) 1 else 0),
-            i32, u32, i64, u64, @TypeOf(1) => c.sqlite3_bind_int64(self.stmt, i, @intCast(arg)),
-            f32, f64, @TypeOf(0.0) => c.sqlite3_bind_double(self.stmt, i, @floatCast(arg)),
-            []const u8, []u8, [:0]const u8, [:0]u8 => c.sqlite3_bind_text(self.stmt, i, arg.ptr, @intCast(arg.len), null),
-            Blob => c.sqlite3_bind_blob(self.stmt, i, arg.bytes.ptr, @intCast(arg.bytes.len), null),
-            else => |T| return switch (@typeInfo(T)) {
-                .Optional => if (arg) |a| self.bind(index, a) else check(c.sqlite3_bind_null(self.stmt, i)),
-                .Pointer => if (comptime util.isString(T)) self.bind(index, @as([]const u8, arg)) else @compileError("Pointer type " ++ @typeName(T) ++ " is not supported"),
-                .Enum => if (comptime util.isDense(T)) self.bind(index, @tagName(arg)) else self.bind(index, @as(u32, @intFromEnum(arg))),
-                else => @compileError("TODO: " ++ @typeName(T)),
-            },
+        try check(switch (arg) {
+            .null => c.sqlite3_bind_null(self.ptr(), i),
+            .int => |v| c.sqlite3_bind_int64(self.ptr(), i, v),
+            .float => |v| c.sqlite3_bind_double(self.ptr(), i, v),
+            .string => |v| c.sqlite3_bind_text(self.ptr(), i, v.ptr, @intCast(v.len), null),
+            .blob => |v| c.sqlite3_bind_blob(self.ptr(), i, v.ptr, @intCast(v.len), null),
         });
     }
 
-    /// Executes the prepared statement, ignoring any rows it returns.
-    pub fn exec(self: *Statement) !void {
-        while (try self.step() != .done) {}
-    }
-
-    /// Gets the value of the given column.
-    pub fn column(self: *Statement, comptime T: type, index: usize) !T {
+    pub fn column(self: *Stmt, index: usize) !Value {
         const i: c_int = @intCast(index);
 
-        return switch (T) {
-            bool => c.sqlite3_column_int(self.stmt, i) != 0,
-            i32, u32, i64, u64 => @intCast(c.sqlite3_column_int64(self.stmt, i)), // sqlite3_column_int() uses int64 internally
-            f32, f64 => @floatCast(c.sqlite3_column_double(self.stmt, i)),
-            []const u8, [:0]const u8 => try self.column(?T, index) orelse error.NullPointer,
-            ?[]const u8, ?[:0]const u8 => {
-                const len = c.sqlite3_column_bytes(self.stmt, i);
-                const data = c.sqlite3_column_text(self.stmt, i);
-
-                return if (data != null) data[0..@intCast(len) :0] else null;
-            },
-            Blob => try self.column(?T, index) orelse error.NullPointer,
-            ?Blob => {
-                const len = c.sqlite3_column_bytes(self.stmt, i);
-                const data: [*c]const u8 = @ptrCast(c.sqlite3_column_blob(self.stmt, i));
-
-                return if (data != null) Blob{ .bytes = data[0..@intCast(len)] } else null;
-            },
-            else => switch (@typeInfo(T)) {
-                .Optional => |o| if (self.isNull(index)) null else try self.column(o.child, index),
-                .Enum => if (comptime util.isDense(T)) std.meta.stringToEnum(T, try self.column([]const u8, index)) orelse error.InvalidEnumTag else @enumFromInt(c.sqlite3_column_int64(self.stmt, i)),
-                else => @compileError("TODO: " ++ @typeName(T)),
-            },
+        return switch (c.sqlite3_column_type(self.ptr(), i)) {
+            c.SQLITE_NULL => .null,
+            c.SQLITE_INTEGER => .{ .int = c.sqlite3_column_int64(self.ptr(), i) },
+            c.SQLITE_FLOAT => .{ .float = c.sqlite3_column_double(self.ptr(), i) },
+            c.SQLITE_TEXT => .{ .string = c.sqlite3_column_text(self.ptr(), i)[0..@intCast(c.sqlite3_column_bytes(self.ptr(), i))] },
+            c.SQLITE_BLOB => .{ .blob = @as([*c]const u8, @ptrCast(c.sqlite3_column_blob(self.ptr(), i)))[0..@intCast(c.sqlite3_column_bytes(self.ptr(), i))] },
+            else => @panic("Unexpected column type"), // TODO: return error
         };
     }
 
-    pub fn isNull(self: *Statement, index: usize) bool {
-        return c.sqlite3_column_type(self.stmt, @intCast(index)) == c.SQLITE_NULL;
-    }
-
-    /// Advances the prepared statement to the next row.
-    pub fn step(self: *Statement) !enum { row, done } {
-        const code = c.sqlite3_step(self.stmt);
-
-        return switch (code) {
-            c.SQLITE_ROW => return .row,
-            c.SQLITE_DONE => return .done,
-            else => {
-                errdefer if (c.sqlite3_db_handle(self.stmt)) |db| log.debug("{s}", .{c.sqlite3_errmsg(db)});
+    pub fn step(self: *Stmt) !bool {
+        return switch (c.sqlite3_step(self.ptr())) {
+            c.SQLITE_ROW => true,
+            c.SQLITE_DONE => false,
+            else => |code| {
+                errdefer if (c.sqlite3_db_handle(self.ptr())) |db| {
+                    util.log.debug("{s}", .{c.sqlite3_errmsg(db)});
+                };
 
                 try check(code);
                 unreachable;
@@ -175,59 +103,26 @@ pub const Statement = struct {
         };
     }
 
-    /// Resets the prepared statement, allowing it to be executed again.
-    pub fn reset(self: *Statement) !void {
-        try check(c.sqlite3_reset(self.stmt));
+    pub fn reset(self: *Stmt) !void {
+        try check(c.sqlite3_reset(self.ptr()));
+    }
+
+    pub fn finalize(self: *Stmt) !void {
+        try check(c.sqlite3_finalize(self.ptr()));
+    }
+
+    inline fn ptr(self: *Stmt) *c.sqlite3_stmt {
+        return @ptrCast(self);
     }
 };
 
 pub fn check(code: c_int) !void {
-    const SQLiteError = error{
-        SQLITE_ABORT,
-        SQLITE_AUTH,
-        SQLITE_BUSY,
-        SQLITE_CANTOPEN,
-        SQLITE_CONSTRAINT,
-        SQLITE_CORRUPT,
-        SQLITE_DONE,
-        SQLITE_EMPTY,
-        SQLITE_ERROR,
-        SQLITE_FORMAT,
-        SQLITE_FULL,
-        SQLITE_INTERNAL,
-        SQLITE_INTERRUPT,
-        SQLITE_IOERR,
-        SQLITE_LOCKED,
-        SQLITE_MISMATCH,
-        SQLITE_MISUSE,
-        SQLITE_NOLFS,
-        SQLITE_NOMEM,
-        SQLITE_NOTADB,
-        SQLITE_NOTFOUND,
-        SQLITE_NOTICE,
-        SQLITE_OK,
-        SQLITE_PERM,
-        SQLITE_PROTOCOL,
-        SQLITE_RANGE,
-        SQLITE_READONLY,
-        SQLITE_ROW,
-        SQLITE_SCHEMA,
-        SQLITE_TOOBIG,
-        SQLITE_WARNING,
-    };
-
-    switch (code) {
-        c.SQLITE_OK, c.SQLITE_DONE, c.SQLITE_ROW => return,
-        else => {
-            @setCold(true);
-
-            log.err("SQLite error: {} {s}", .{ code, c.sqlite3_errstr(code) });
-
-            inline for (comptime std.meta.fields(SQLiteError)) |f| {
-                if (code == @field(c, f.name)) return @field(SQLiteError, f.name);
-            }
-
-            return error.SQLiteError;
-        },
+    errdefer {
+        util.log.err("SQLite error: {} {s}", .{ code, c.sqlite3_errstr(code) });
     }
+
+    return switch (code) {
+        c.SQLITE_OK, c.SQLITE_DONE, c.SQLITE_ROW => {},
+        else => error.DbError,
+    };
 }
