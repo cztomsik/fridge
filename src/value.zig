@@ -61,7 +61,9 @@ pub const Value = union(enum) {
             .Enum => if (comptime util.isDense(T)) std.meta.stringToEnum(T, self.string) orelse error.InvalidEnumTag else @enumFromInt(self.int),
             else => {
                 if (comptime util.isJsonRepresentable(T)) {
-                    return std.json.parseFromSliceLeaky(T, arena, self.string, .{});
+                    return std.json.parseFromSliceLeaky(T, arena, self.string, .{
+                        .allocate = .alloc_always,
+                    });
                 }
 
                 @compileError("TODO: " ++ @typeName(T));
