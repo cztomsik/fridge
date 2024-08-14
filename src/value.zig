@@ -55,7 +55,7 @@ pub const Value = union(enum) {
 
         return switch (@typeInfo(T)) {
             .Optional => |o| if (self == .null) null else try into(self, o.child, arena),
-            .Bool => if (self.int) true else false,
+            .Bool => if (self.int == 1) true else false,
             .Int, .ComptimeInt => @intCast(self.int),
             .Float, .ComptimeFloat => @floatCast(self.float),
             .Enum => if (comptime util.isDense(T)) std.meta.stringToEnum(T, self.string) orelse error.InvalidEnumTag else @enumFromInt(self.int),
