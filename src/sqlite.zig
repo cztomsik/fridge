@@ -45,7 +45,7 @@ pub const SQLite3 = opaque {
         return @intCast(c.sqlite3_changes(self.ptr()));
     }
 
-    pub fn lastInsertRowId(self: *SQLite3) i64 {
+    pub fn lastInsertRowId(self: *SQLite3) !i64 {
         return c.sqlite3_last_insert_rowid(self.ptr());
     }
 

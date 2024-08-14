@@ -13,7 +13,7 @@ pub const Connection = struct {
             execAll: *const fn (self: H, sql: []const u8) Error!void,
             prepare: *const fn (self: H, sql: []const u8) Error!Statement,
             rowsAffected: *const fn (self: H) Error!usize,
-            lastInsertRowId: *const fn (self: H) i64,
+            lastInsertRowId: *const fn (self: H) Error!i64,
             lastError: *const fn (self: H) []const u8,
             close: *const fn (self: H) void,
         };
@@ -44,7 +44,7 @@ pub const Connection = struct {
     }
 
     /// Returns the row ID of the last INSERT.
-    pub fn lastInsertRowId(self: *Connection) i64 {
+    pub fn lastInsertRowId(self: *Connection) !i64 {
         return self.vtable.lastInsertRowId(self.handle);
     }
 
