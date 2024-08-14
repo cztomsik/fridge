@@ -69,6 +69,12 @@ pub const Session = struct {
         return self.query(T).find(id);
     }
 
+    /// Create a new record and return it.
+    pub fn create(self: *Session, comptime T: type, data: anytype) !T {
+        try self.insert(T, data);
+        return try self.find(T, @intCast(try self.conn.lastInsertRowId())) orelse error.NotFound;
+    }
+
     /// Insert a new record.
     pub fn insert(self: *Session, comptime T: type, data: anytype) !void {
         comptime util.checkFields(T, @TypeOf(data));
