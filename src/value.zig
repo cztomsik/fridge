@@ -49,7 +49,7 @@ pub const Value = union(enum) {
             return T.fromValue(self, arena);
         }
 
-        if (comptime T == []const u8 or T == [:0]const u8) {
+        if (comptime util.isString(T)) {
             return arena.dupeZ(u8, self.string);
         }
 
