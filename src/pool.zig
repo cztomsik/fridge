@@ -43,7 +43,16 @@ pub const Pool = struct {
     /// Get a connection from the pool. If the pool is empty, this will block
     /// until a connection is available.
     pub fn getConnection(self: *Pool) Error!Connection {
+        // TODO:
+        // Opening a connection is driver-specific and it can take some time to
+        // open it (e.g. DNS). It would be better to not block the entire pool
+        // while waiting. On the other hand, it only happens once every time the
+        // pool is empty, so maybe it's not worth the extra complexity.
         self.mutex.lock();
+
+        // TODO:
+        // What's worse is that we might loose the connection (network error)
+        // and then we should retry opening it. This is left for later.
 
         while (true) {
             if (self.conns.popOrNull()) |conn| {
@@ -81,13 +90,13 @@ pub const Pool = struct {
 
     /// Deinitialize the pool and close all connections.
     pub fn deinit(self: *Pool) void {
-        // Make sure no new connections are created
         self.mutex.lock();
-        self.max_count = 0;
+        self.max_count = 0; // Make sure no new connections are created
+        const count = self.count; // Save before unlocking
         self.mutex.unlock();
 
         // Reserve all connections and close them
-        for (0..self.count) |_| {
+        for (0..count) |_| {
             var conn = self.getConnection() catch unreachable;
             conn.close();
         }
