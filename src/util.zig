@@ -1,6 +1,15 @@
+const builtin = @import("builtin");
 const std = @import("std");
 
-pub const log = std.log.scoped(.fridge);
+pub const log = if (builtin.is_test) struct { // zig build test captures stderr and there seems to be no f* way to disable it
+    pub fn debug(comptime fmt: []const u8, args: anytype) void {
+        std.debug.print("debug: " ++ fmt ++ "\n", args);
+    }
+
+    pub fn err(comptime fmt: []const u8, args: anytype) void {
+        std.debug.print("err: " ++ fmt ++ "\n", args);
+    }
+} else std.log.scoped(.fridge);
 
 pub fn tableName(comptime T: type) []const u8 {
     return comptime brk: {
