@@ -39,7 +39,7 @@ pub const Pool = struct {
 
     pub fn getSession(self: *Pool, allocator: std.mem.Allocator) Error!Session {
         var sess = try Session.init(allocator, try self.getConnection());
-        sess.pool = self;
+        sess.owned = true;
         return sess;
     }
 
