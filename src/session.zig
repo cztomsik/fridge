@@ -9,12 +9,11 @@ const Query = @import("query.zig").Query;
 pub const Session = struct {
     arena: std.mem.Allocator,
     conn: Connection,
-    pool: ?*Pool = null,
-    close: bool = false,
+    owned: bool = false,
 
     pub fn open(comptime T: type, allocator: std.mem.Allocator, options: T.Options) !Session {
         var sess = try Session.init(allocator, try Connection.open(T, options));
-        sess.close = true;
+        sess.owned = true;
         return sess;
     }
 
@@ -33,12 +32,8 @@ pub const Session = struct {
         arena.deinit();
         arena.child_allocator.destroy(arena);
 
-        if (self.pool) |pool| {
-            pool.releaseConnection(self.conn);
-        } else {
-            if (self.close) {
-                self.conn.close();
-            }
+        if (self.owned) {
+            self.conn.deinit();
         }
     }
 
