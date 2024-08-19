@@ -104,7 +104,7 @@ const Person = struct {
 
 fn open() !Session {
     var conn = try Connection.open(@import("sqlite.zig").SQLite3, .{ .filename = ":memory:" });
-    errdefer conn.close();
+    errdefer conn.deinit();
 
     try conn.execAll(
         \\CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT);
@@ -117,7 +117,7 @@ fn open() !Session {
 
 fn close(db: *Session) void {
     db.deinit();
-    db.conn.close();
+    db.conn.deinit();
 }
 
 test "db.prepare()" {

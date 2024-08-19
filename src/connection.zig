@@ -15,7 +15,7 @@ pub const Connection = struct {
             rowsAffected: *const fn (self: H) Error!usize,
             lastInsertRowId: *const fn (self: H) Error!i64,
             lastError: *const fn (self: H) []const u8,
-            close: *const fn (self: H) void,
+            deinit: *const fn (self: H) void,
         };
     }
 
@@ -24,12 +24,12 @@ pub const Connection = struct {
     }
 
     /// Executes all SQL statements in the given string.
-    pub fn execAll(self: *Connection, sql: []const u8) Error!void {
+    pub fn execAll(self: Connection, sql: []const u8) Error!void {
         return self.vtable.execAll(self.handle, sql);
     }
 
     /// Creates a prepared statement from the given SQL.
-    pub fn prepare(self: *Connection, sql: []const u8) Error!Statement {
+    pub fn prepare(self: Connection, sql: []const u8) Error!Statement {
         errdefer {
             util.log.debug("{s}", .{self.lastError()});
             util.log.debug("Failed to prepare SQL: {s}\n", .{sql});
@@ -39,22 +39,22 @@ pub const Connection = struct {
     }
 
     /// Returns the number of rows modified by the last INSERT/UPDATE/DELETE.
-    pub fn rowsAffected(self: *Connection) !usize {
+    pub fn rowsAffected(self: Connection) !usize {
         return self.vtable.rowsAffected(self.handle);
     }
 
     /// Returns the row ID of the last INSERT.
-    pub fn lastInsertRowId(self: *Connection) !i64 {
+    pub fn lastInsertRowId(self: Connection) !i64 {
         return self.vtable.lastInsertRowId(self.handle);
     }
 
     /// Returns the last error message.
-    pub fn lastError(self: *Connection) []const u8 {
+    pub fn lastError(self: Connection) []const u8 {
         return self.vtable.lastError(self.handle);
     }
 
     /// Closes the connection.
-    pub fn close(self: *Connection) void {
-        self.vtable.close(self.handle);
+    pub fn deinit(self: Connection) void {
+        self.vtable.deinit(self.handle);
     }
 };

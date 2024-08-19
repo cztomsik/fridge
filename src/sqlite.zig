@@ -53,7 +53,7 @@ pub const SQLite3 = opaque {
         return std.mem.span(c.sqlite3_errmsg(self.ptr()));
     }
 
-    pub fn close(self: *SQLite3) void {
+    pub fn deinit(self: *SQLite3) void {
         _ = c.sqlite3_close(self.ptr());
     }
 
