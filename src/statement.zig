@@ -2,13 +2,12 @@ const std = @import("std");
 const util = @import("util.zig");
 const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
+const Error = @import("error.zig").Error;
 
 pub const Statement = extern struct {
     session: ?*Session = null,
     handle: *anyopaque,
     vtable: *const VTable(*anyopaque),
-
-    pub const Error = error{ DbError, OutOfMemory };
 
     pub fn VTable(comptime H: type) type {
         return struct {

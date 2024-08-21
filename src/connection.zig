@@ -1,12 +1,11 @@
 const std = @import("std");
 const util = @import("util.zig");
 const Statement = @import("statement.zig").Statement;
+const Error = @import("error.zig").Error;
 
 pub const Connection = struct {
     handle: *anyopaque,
     vtable: *const VTable(*anyopaque),
-
-    pub const Error = error{ DbError, OutOfMemory };
 
     pub fn VTable(comptime H: type) type {
         return struct {
@@ -19,7 +18,7 @@ pub const Connection = struct {
         };
     }
 
-    pub fn open(comptime T: type, options: T.Options) Error!Connection {
+    pub fn open(comptime T: type, options: T.Options) !Connection {
         return util.upcast(try T.open(options), Connection);
     }
 
@@ -39,12 +38,12 @@ pub const Connection = struct {
     }
 
     /// Returns the number of rows modified by the last INSERT/UPDATE/DELETE.
-    pub fn rowsAffected(self: Connection) !usize {
+    pub fn rowsAffected(self: Connection) Error!usize {
         return self.vtable.rowsAffected(self.handle);
     }
 
     /// Returns the row ID of the last INSERT.
-    pub fn lastInsertRowId(self: Connection) !i64 {
+    pub fn lastInsertRowId(self: Connection) Error!i64 {
         return self.vtable.lastInsertRowId(self.handle);
     }
 
