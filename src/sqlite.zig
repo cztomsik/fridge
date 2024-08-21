@@ -11,7 +11,7 @@ const c = @cImport(
 pub const SQLite3 = opaque {
     pub const Options = struct {
         filename: [:0]const u8,
-        flags: c_int = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX,
+        flags: c_int = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX | c.SQLITE_OPEN_EXRESCODE,
         busy_timeout: c_int = 0,
     };
 
@@ -123,6 +123,10 @@ pub fn check(code: c_int) !void {
 
     return switch (code) {
         c.SQLITE_OK, c.SQLITE_DONE, c.SQLITE_ROW => {},
+        c.SQLITE_CONSTRAINT_CHECK => error.CheckViolation,
+        c.SQLITE_CONSTRAINT_FOREIGNKEY => error.ForeignKeyViolation,
+        c.SQLITE_CONSTRAINT_NOTNULL => error.NotNullViolation,
+        c.SQLITE_CONSTRAINT_PRIMARYKEY, c.SQLITE_CONSTRAINT_UNIQUE => error.UniqueViolation,
         else => error.DbError,
     };
 }
