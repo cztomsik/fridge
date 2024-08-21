@@ -24,6 +24,10 @@ pub const Connection = struct {
 
     /// Executes all SQL statements in the given string.
     pub fn execAll(self: Connection, sql: []const u8) Error!void {
+        errdefer {
+            util.log.debug("{s}", .{self.lastError()});
+        }
+
         return self.vtable.execAll(self.handle, sql);
     }
 
