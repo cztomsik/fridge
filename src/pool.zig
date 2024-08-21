@@ -116,28 +116,26 @@ const PoolConn = struct {
     conn: Connection,
     available: bool = false,
 
-    const Error = Connection.Error;
-
-    inline fn check(res: anytype) Error!@typeInfo(@TypeOf(res)).ErrorUnion.payload {
+    inline fn check(res: anytype) @TypeOf(res) {
         return res catch |e| switch (e) {
             // TODO: check for error.BrokenPipe/ConnectionClosed and reconnect?
             else => e,
         };
     }
 
-    pub fn execAll(self: *PoolConn, sql: []const u8) Error!void {
+    pub fn execAll(self: *PoolConn, sql: []const u8) !void {
         return check(self.conn.execAll(sql));
     }
 
-    pub fn prepare(self: *PoolConn, sql: []const u8) Error!Statement {
+    pub fn prepare(self: *PoolConn, sql: []const u8) !Statement {
         return check(self.conn.prepare(sql));
     }
 
-    pub fn rowsAffected(self: *PoolConn) Error!usize {
+    pub fn rowsAffected(self: *PoolConn) !usize {
         return check(self.conn.rowsAffected());
     }
 
-    pub fn lastInsertRowId(self: *PoolConn) Error!i64 {
+    pub fn lastInsertRowId(self: *PoolConn) !i64 {
         return check(self.conn.lastInsertRowId());
     }
 
@@ -162,7 +160,6 @@ const TestConn = struct {
     id: u32,
 
     pub const Options = void;
-    const Error = Connection.Error;
 
     var created: std.atomic.Value(u32) = .{ .raw = 0 };
     var destroyed: std.atomic.Value(u32) = .{ .raw = 0 };
@@ -173,19 +170,19 @@ const TestConn = struct {
         return ptr;
     }
 
-    pub fn execAll(_: *TestConn, _: []const u8) Error!void {
+    pub fn execAll(_: *TestConn, _: []const u8) !void {
         unreachable;
     }
 
-    pub fn prepare(_: *TestConn, _: []const u8) Error!Statement {
+    pub fn prepare(_: *TestConn, _: []const u8) !Statement {
         unreachable;
     }
 
-    pub fn rowsAffected(_: *TestConn) Error!usize {
+    pub fn rowsAffected(_: *TestConn) !usize {
         unreachable;
     }
 
-    pub fn lastInsertRowId(_: *TestConn) Error!i64 {
+    pub fn lastInsertRowId(_: *TestConn) !i64 {
         unreachable;
     }
 
