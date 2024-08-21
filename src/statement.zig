@@ -15,12 +15,12 @@ pub const Statement = extern struct {
             column: *const fn (self: H, index: usize) Error!Value,
             step: *const fn (self: H) Error!bool,
             reset: *const fn (self: H) Error!void,
-            finalize: *const fn (self: H) Error!void,
+            finalize: *const fn (self: H) void,
         };
     }
 
     pub fn deinit(self: *Statement) void {
-        self.vtable.finalize(self.handle) catch @panic("TODO");
+        self.vtable.finalize(self.handle);
     }
 
     pub fn bind(self: *Statement, index: usize, arg: anytype) !void {

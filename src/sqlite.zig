@@ -107,8 +107,8 @@ const Stmt = opaque {
         try check(c.sqlite3_reset(self.ptr()));
     }
 
-    pub fn finalize(self: *Stmt) !void {
-        try check(c.sqlite3_finalize(self.ptr()));
+    pub fn finalize(self: *Stmt) void {
+        _ = c.sqlite3_finalize(self.ptr());
     }
 
     inline fn ptr(self: *Stmt) *c.sqlite3_stmt {
