@@ -92,26 +92,21 @@ const Person = struct {
 };
 
 fn open() !Session {
-    var conn = try Connection.open(@import("sqlite.zig").SQLite3, .{ .filename = ":memory:" });
-    errdefer conn.deinit();
+    var db = try Session.open(@import("sqlite.zig").SQLite3, t.allocator, .{ .filename = ":memory:" });
+    errdefer db.deinit();
 
-    try conn.execAll(
+    try db.conn.execAll(
         \\CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT);
         \\INSERT INTO Person (name) VALUES ('Alice');
         \\INSERT INTO Person (name) VALUES ('Bob');
     );
 
-    return Session.init(t.allocator, conn);
-}
-
-fn close(db: *Session) void {
-    db.deinit();
-    db.conn.deinit();
+    return db;
 }
 
 test "db.prepare()" {
     var db = try open();
-    defer close(&db);
+    defer db.deinit();
 
     var stmt = try db.prepare("SELECT 1 + ?", .{1});
     defer stmt.deinit();
@@ -119,9 +114,21 @@ test "db.prepare()" {
     try t.expectEqual(2, try stmt.value(u32, db.arena));
 }
 
+test "db.query(T).xxx() value methods" {
+    var db = try open();
+    defer db.deinit();
+
+    var q = db.query(Person);
+
+    try t.expectEqual(true, q.exists());
+    try t.expectEqual(2, q.count(.id));
+    try t.expectEqual(1, q.min(.id));
+    try t.expectEqual(2, q.max(.id));
+}
+
 test "db.query(T).findAll()" {
     var db = try open();
-    defer close(&db);
+    defer db.deinit();
 
     try t.expectEqualDeep(&[_]Person{
         .{ .id = 1, .name = "Alice" },
@@ -131,7 +138,7 @@ test "db.query(T).findAll()" {
 
 test "db.find(T, id)" {
     var db = try open();
-    defer close(&db);
+    defer db.deinit();
 
     try t.expectEqualDeep(
         Person{ .id = 1, .name = "Alice" },
@@ -141,7 +148,7 @@ test "db.find(T, id)" {
 
 test "db.insert(T, data)" {
     var db = try open();
-    defer close(&db);
+    defer db.deinit();
 
     _ = try db.insert(Person, .{ .name = "Charlie" });
     try t.expectEqualDeep(3, db.conn.lastInsertRowId());
@@ -150,7 +157,7 @@ test "db.insert(T, data)" {
 
 test "db.update(T, id, data)" {
     var db = try open();
-    defer close(&db);
+    defer db.deinit();
 
     try db.update(Person, 1, .{ .name = "Sarah" });
     try t.expectEqual(1, db.conn.rowsAffected());
@@ -159,7 +166,7 @@ test "db.update(T, id, data)" {
 
 test "db.delete(T, id)" {
     var db = try open();
-    defer close(&db);
+    defer db.deinit();
 
     try db.delete(Person, 1);
     try t.expectEqual(1, db.conn.rowsAffected());

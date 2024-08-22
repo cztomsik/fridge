@@ -90,6 +90,10 @@ pub fn Query(comptime T: type, comptime R: type) type {
             return stmt.value(V, self.session.arena);
         }
 
+        pub fn exists(self: Q) !bool {
+            return try self.valueRaw(bool, "1") orelse false;
+        }
+
         pub fn count(self: Q, comptime col: Col) !u64 {
             return (try self.valueRaw(u64, "COUNT(" ++ @tagName(col) ++ ")")).?;
         }
