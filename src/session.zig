@@ -60,32 +60,23 @@ pub const Session = struct {
     // }
 
     /// Find a record by its primary key.
-    pub fn find(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !?T {
+    pub fn find(self: *Session, comptime T: type, id: util.Id(T)) !?T {
         return self.query(T).find(id);
     }
 
-    /// Create a new record and return it.
-    pub fn create(self: *Session, comptime T: type, data: anytype) !T {
-        try self.insert(T, data);
-        return try self.find(T, @intCast(try self.conn.lastInsertRowId())) orelse error.NotFound;
-    }
-
-    /// Insert a new record.
-    pub fn insert(self: *Session, comptime T: type, data: anytype) !void {
-        comptime util.checkFields(T, @TypeOf(data));
-
-        return self.query(T).insert(data);
+    /// Insert a new record and return its primary key
+    pub fn insert(self: *Session, comptime T: type, data: anytype) !util.Id(T) {
+        try self.query(T).insert(data); // TODO: returning id?
+        return @intCast(try self.conn.lastInsertRowId());
     }
 
     /// Update a record by its primary key.
-    pub fn update(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id), data: anytype) !void {
-        comptime util.checkFields(T, @TypeOf(data));
-
+    pub fn update(self: *Session, comptime T: type, id: util.Id(T), data: anytype) !void {
         return self.query(T).where(.id, id).update(data);
     }
 
     /// Delete a record by its primary key.
-    pub fn delete(self: *Session, comptime T: type, id: std.meta.FieldType(T, .id)) !void {
+    pub fn delete(self: *Session, comptime T: type, id: util.Id(T)) !void {
         try self.query(T).where(.id, id).delete();
     }
 };
@@ -149,7 +140,7 @@ test "db.insert(T, data)" {
     var db = try open();
     defer close(&db);
 
-    try db.insert(Person, .{ .name = "Charlie" });
+    _ = try db.insert(Person, .{ .name = "Charlie" });
     try t.expectEqualDeep(3, db.conn.lastInsertRowId());
     try t.expectEqual(1, db.conn.rowsAffected());
 }

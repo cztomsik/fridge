@@ -11,6 +11,15 @@ pub const log = if (builtin.is_test) struct { // zig build test captures stderr 
     }
 } else std.log.scoped(.fridge);
 
+pub fn Id(comptime T: type) type {
+    const Col = std.meta.FieldType(T, .id);
+
+    return switch (@typeInfo(Col)) {
+        .Optional => |o| o.child,
+        else => Col,
+    };
+}
+
 pub fn tableName(comptime T: type) []const u8 {
     return comptime brk: {
         if (@hasDecl(T, "sql_table_name")) break :brk T.sql_table_name;
