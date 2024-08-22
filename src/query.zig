@@ -144,6 +144,8 @@ pub fn Query(comptime T: type, comptime R: type) type {
         }
 
         pub fn values(self: Q, data: anytype) Q {
+            comptime util.checkFields(T, @TypeOf(data));
+
             return self.append(.values, comptime "(" ++ util.columns(@TypeOf(data)) ++ ") VALUES (" ++ util.placeholders(@TypeOf(data)) ++ ")", data);
         }
 
