@@ -5,7 +5,6 @@ const Session = @import("session.zig").Session;
 const Error = @import("error.zig").Error;
 
 pub const Statement = extern struct {
-    session: ?*Session = null,
     handle: *anyopaque,
     vtable: *const VTable(*anyopaque),
 
@@ -23,14 +22,8 @@ pub const Statement = extern struct {
         self.vtable.deinit(self.handle);
     }
 
-    pub fn bind(self: *Statement, index: usize, arg: anytype) !void {
-        try self.vtable.bind(self.handle, index, try Value.from(arg, self.session.?.arena));
-    }
-
-    pub fn bindAll(self: *Statement, args: anytype) !void {
-        inline for (0..args.len) |i| {
-            try self.bind(i, args[i]);
-        }
+    pub fn bind(self: *Statement, index: usize, val: Value) !void {
+        try self.vtable.bind(self.handle, index, val);
     }
 
     pub fn exec(self: *Statement) !void {
@@ -39,12 +32,12 @@ pub const Statement = extern struct {
         }
     }
 
-    pub fn value(self: *Statement, comptime V: type) !?V {
-        return if (try self.row(struct { V })) |r| r[0] else null;
+    pub fn value(self: *Statement, comptime V: type, arena: std.mem.Allocator) !?V {
+        return if (try self.row(struct { V }, arena)) |r| r[0] else null;
     }
 
-    pub fn row(self: *Statement, comptime R: type) !?R {
-        if (try self.next(R)) |r| {
+    pub fn row(self: *Statement, comptime R: type, arena: std.mem.Allocator) !?R {
+        if (try self.next(R, arena)) |r| {
             try self.reset();
             return r;
         }
@@ -52,17 +45,17 @@ pub const Statement = extern struct {
         return null;
     }
 
-    pub fn all(self: *Statement, comptime R: type) ![]const R {
-        var res = std.ArrayList(R).init(self.session.?.arena);
+    pub fn all(self: *Statement, comptime R: type, arena: std.mem.Allocator) ![]const R {
+        var res = std.ArrayList(R).init(arena);
 
-        while (try self.next(R)) |r| {
+        while (try self.next(R, arena)) |r| {
             try res.append(r);
         }
 
         return res.toOwnedSlice();
     }
 
-    pub fn next(self: *Statement, comptime R: type) !?R {
+    pub fn next(self: *Statement, comptime R: type, arena: std.mem.Allocator) !?R {
         if (!try self.step()) {
             return null;
         }
@@ -70,7 +63,8 @@ pub const Statement = extern struct {
         var res: R = undefined;
 
         inline for (@typeInfo(@TypeOf(res)).Struct.fields, 0..) |f, i| {
-            @field(res, f.name) = try self.column(f.type, i);
+            const val = try self.column(i);
+            @field(res, f.name) = try val.into(f.type, arena);
         }
 
         return res;
@@ -80,11 +74,8 @@ pub const Statement = extern struct {
         return self.vtable.step(self.handle);
     }
 
-    fn column(self: *Statement, comptime V: type, index: usize) !V {
-        // TODO: pass Value.hint(Value.FirstArg(V.fromValue)) to vtable.column()
-        //       so we don't need to get generic Value first; but this can wait
-        const val = try self.vtable.column(self.handle, index);
-        return val.into(V, self.session.?.arena);
+    fn column(self: *Statement, index: usize) !Value {
+        return self.vtable.column(self.handle, index);
     }
 
     pub fn reset(self: *Statement) !void {

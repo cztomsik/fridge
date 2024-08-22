@@ -5,6 +5,7 @@ const Connection = @import("connection.zig").Connection;
 const Pool = @import("pool.zig").Pool;
 const Statement = @import("statement.zig").Statement;
 const Query = @import("query.zig").Query;
+const Value = @import("value.zig").Value;
 
 pub const Session = struct {
     arena: std.mem.Allocator,
@@ -41,8 +42,10 @@ pub const Session = struct {
         var stmt: Statement = try self.conn.prepare(sql);
         errdefer stmt.deinit();
 
-        stmt.session = self;
-        try stmt.bindAll(args);
+        inline for (0..args.len) |i| {
+            try stmt.bind(i, try Value.from(args[i], self.arena));
+        }
+
         return stmt;
     }
 
@@ -113,7 +116,7 @@ test "db.prepare()" {
     var stmt = try db.prepare("SELECT 1 + ?", .{1});
     defer stmt.deinit();
 
-    try t.expectEqual(2, try stmt.value(u32));
+    try t.expectEqual(2, try stmt.value(u32, db.arena));
 }
 
 test "db.query(T).findAll()" {

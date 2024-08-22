@@ -87,7 +87,7 @@ pub fn Query(comptime T: type, comptime R: type) type {
             var stmt = try self.selectRaw(expr).limit(1).prepare();
             defer stmt.deinit();
 
-            return stmt.value(V);
+            return stmt.value(V, self.session.arena);
         }
 
         pub fn count(self: Q, comptime col: Col) !u64 {
@@ -125,14 +125,14 @@ pub fn Query(comptime T: type, comptime R: type) type {
             var stmt = try self.limit(1).prepare();
             defer stmt.deinit();
 
-            return stmt.row(R);
+            return stmt.row(R, self.session.arena);
         }
 
         pub fn findAll(self: Q) ![]const R {
             var stmt = try self.prepare();
             defer stmt.deinit();
 
-            return stmt.all(R);
+            return stmt.all(R, self.session.arena);
         }
 
         pub fn insert(self: Q, data: anytype) !void {

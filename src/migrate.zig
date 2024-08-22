@@ -68,7 +68,7 @@ fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
                 defer stmt.deinit();
 
                 // Copy data from old table to temp table
-                const copy_sql = try std.fmt.allocPrint(db.arena, "INSERT INTO temp({0s}) SELECT {0s} FROM {1s}", .{ (try stmt.value([]const u8)).?, obj.name });
+                const copy_sql = try std.fmt.allocPrint(db.arena, "INSERT INTO temp({0s}) SELECT {0s} FROM {1s}", .{ (try stmt.value([]const u8, db.arena)).?, obj.name });
                 try db.conn.execAll(copy_sql);
             }
 
