@@ -17,14 +17,21 @@ pub const SQLite3 = opaque {
 
     pub fn open(opts: Options) !*SQLite3 {
         var db: ?*c.sqlite3 = null;
-        errdefer {
-            // SQLite may init the handle even if it fails to open the database.
-            if (db) |pdb| _ = c.sqlite3_close(pdb);
-        }
 
-        try check(c.sqlite3_open_v2(opts.filename.ptr, &db, opts.flags, null));
-        try check(c.sqlite3_busy_timeout(db.?, opts.busy_timeout));
-        return @ptrCast(db.?);
+        switch (c.sqlite3_open_v2(opts.filename.ptr, &db, opts.flags, null)) {
+            c.SQLITE_OK => {
+                _ = c.sqlite3_busy_timeout(db.?, opts.busy_timeout);
+                return @ptrCast(db.?);
+            },
+            else => |code| {
+                util.log.err("SQLite3.open: {} {s}", .{ code, c.sqlite3_errstr(code) });
+
+                // SQLite may init the handle even if it fails to open the database.
+                if (db) |pdb| _ = c.sqlite3_close(pdb);
+
+                return error.DbError;
+            },
+        }
     }
 
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {
