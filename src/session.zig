@@ -51,6 +51,24 @@ pub const Session = struct {
 
     // TODO: begin/commit/rollback via self.conn.execAll(...)?
 
+    pub fn exec(self: *Session, sql: []const u8, args: anytype) !void {
+        var stmt = try self.prepare(sql, args);
+        defer stmt.deinit();
+
+        try stmt.exec();
+    }
+
+    pub fn get(self: *Session, comptime T: type, sql: []const u8, args: anytype) !?T {
+        var stmt = try self.prepare(sql, args);
+        defer stmt.deinit();
+
+        if (try stmt.next(struct { T }, self.arena)) |row| {
+            return row[0];
+        }
+
+        return null;
+    }
+
     pub fn query(self: *Session, comptime T: type) Query(T, T) {
         return .{ .session = self };
     }
@@ -111,7 +129,23 @@ test "db.prepare()" {
     var stmt = try db.prepare("SELECT 1 + ?", .{1});
     defer stmt.deinit();
 
-    try t.expectEqual(2, try stmt.value(u32, db.arena));
+    try t.expectEqual(.{2}, stmt.next(struct { u32 }, db.arena));
+}
+
+test "db.exec()" {
+    var db = try open();
+    defer db.deinit();
+
+    try db.exec("INSERT INTO Person (name) VALUES (?)", .{"Charlie"});
+    try t.expectEqual(3, db.conn.lastInsertRowId());
+    try t.expectEqual(1, db.conn.rowsAffected());
+}
+
+test "db.get()" {
+    var db = try open();
+    defer db.deinit();
+
+    try t.expectEqual(123, try db.get(u32, "SELECT ? + 23", .{100}));
 }
 
 test "db.query(T).xxx() value methods" {
