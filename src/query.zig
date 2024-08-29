@@ -31,6 +31,10 @@ pub fn Query(comptime T: type, comptime R: type) type {
             return self.append(.select, columns, .{});
         }
 
+        pub fn fromRaw(self: Q, from: []const u8) Q {
+            return self.append(.from, from, .{});
+        }
+
         pub fn joinRaw(self: Q, join: []const u8) Q {
             return self.append(.join, join, .{});
         }
@@ -403,6 +407,13 @@ test "query.select()" {
     try expectSql(
         db.query(Person).selectRaw("name, age"),
         "SELECT name, age FROM Person",
+    );
+}
+
+test "query.fromRaw()" {
+    try expectSql(
+        db.query(Person).fromRaw("Person p"),
+        "SELECT id, name, age FROM Person p",
     );
 }
 
