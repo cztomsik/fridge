@@ -19,7 +19,7 @@ pub const Pool = struct {
     mutex: std.Thread.Mutex = .{},
     wait: std.Thread.Condition = .{},
 
-    const Error = error{ DbError, OutOfMemory, PoolClosing };
+    const Error = error{ OutOfMemory, ConnectionFailed, PoolClosing };
 
     /// Initialize a connection pool with capacity for `max_count` connections
     /// which will be created using the provided driver-specific `options`.

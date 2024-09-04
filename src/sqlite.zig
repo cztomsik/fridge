@@ -12,26 +12,26 @@ pub const SQLite3 = opaque {
     pub const Options = struct {
         filename: [:0]const u8,
         flags: c_int = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX | c.SQLITE_OPEN_EXRESCODE,
-        busy_timeout: c_int = 0,
+        busy_timeout: ?c_int = 5_000,
+        foreign_keys: ?enum { off, on } = .on,
     };
 
-    pub fn open(opts: Options) !*SQLite3 {
-        var db: ?*c.sqlite3 = null;
+    pub fn open(options: Options) !*SQLite3 {
+        var pdb: ?*c.sqlite3 = null;
+        errdefer _ = if (pdb != null) c.sqlite3_close(pdb); // SQLite may init the handle even if it fails to open the database.
 
-        switch (c.sqlite3_open_v2(opts.filename.ptr, &db, opts.flags, null)) {
-            c.SQLITE_OK => {
-                _ = c.sqlite3_busy_timeout(db.?, opts.busy_timeout);
-                return @ptrCast(db.?);
-            },
-            else => |code| {
-                util.log.err("SQLite3.open: {} {s}", .{ code, c.sqlite3_errstr(code) });
+        check(c.sqlite3_open_v2(options.filename.ptr, &pdb, options.flags, null)) catch return error.ConnectionFailed;
+        const db: *SQLite3 = @ptrCast(pdb.?);
 
-                // SQLite may init the handle even if it fails to open the database.
-                if (db) |pdb| _ = c.sqlite3_close(pdb);
-
-                return error.DbError;
-            },
+        if (options.busy_timeout) |v| {
+            _ = c.sqlite3_busy_timeout(pdb, v);
         }
+
+        if (options.foreign_keys) |v| switch (v) {
+            inline else => |t| db.execAll("PRAGMA foreign_keys = " ++ @tagName(t)) catch return error.ConnectionFailed,
+        };
+
+        return db;
     }
 
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {
