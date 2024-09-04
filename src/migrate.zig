@@ -23,18 +23,18 @@ pub fn migrate(allocator: std.mem.Allocator, filename: [:0]const u8, ddl: []cons
     try db.conn.execAll("PRAGMA journal_mode = WAL");
     try db.conn.execAll("PRAGMA synchronous = FULL");
 
-    // Start a transaction and disable foreign key checks
-    try db.conn.execAll("BEGIN");
-    try db.conn.execAll("PRAGMA foreign_keys = OFF");
+    // Disable foreign key checks (needs to be first!) and start a transaction
+    try db.conn.execAll("PRAGMA foreign_keys = OFF"); // TODO: can we at least lock the file?
+    try db.conn.execAll("BEGIN EXCLUSIVE");
 
     // Migrate each object type
     inline for (.{ "table", "view", "trigger", "index" }) |kind| {
         try migrateObjects(&db, &pristine, kind);
     }
 
-    // Re-enable foreign key checks and commit
-    try db.conn.execAll("PRAGMA foreign_keys = ON");
+    // Commit and re-enable foreign key checks
     try db.conn.execAll("COMMIT");
+    try db.conn.execAll("PRAGMA foreign_keys = ON");
 }
 
 fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
