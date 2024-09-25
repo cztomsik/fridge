@@ -227,7 +227,7 @@ pub fn Query(comptime T: type, comptime R: type) type {
                 .sql = sql,
             };
 
-            const fields = @typeInfo(@TypeOf(args)).Struct.fields;
+            const fields = @typeInfo(@TypeOf(args)).@"struct".fields;
             if (comptime fields.len > 0) {
                 const vals = self.session.arena.alloc(Value, fields.len) catch @panic("OOM");
 

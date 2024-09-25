@@ -24,12 +24,12 @@ pub const Value = union(enum) {
         }
 
         return switch (@typeInfo(T)) {
-            .Null => .null,
-            .Optional => if (val) |v| from(v, arena) else .null,
-            .Bool => .{ .int = if (val) 1 else 0 },
-            .Int, .ComptimeInt => .{ .int = @intCast(val) },
-            .Float, .ComptimeFloat => .{ .float = @floatCast(val) },
-            .Enum => from(if (comptime util.isDense(T)) @tagName(val) else @as(u32, @intFromEnum(val)), arena),
+            .null => .null,
+            .optional => if (val) |v| from(v, arena) else .null,
+            .bool => .{ .int = if (val) 1 else 0 },
+            .int, .comptime_int => .{ .int = @intCast(val) },
+            .float, .comptime_float => .{ .float = @floatCast(val) },
+            .@"enum" => from(if (comptime util.isDense(T)) @tagName(val) else @as(u32, @intFromEnum(val)), arena),
             else => {
                 if (comptime util.isJsonRepresentable(T)) {
                     return .{ .string = try std.json.stringifyAlloc(arena, val, .{}) };
@@ -54,11 +54,11 @@ pub const Value = union(enum) {
         }
 
         return switch (@typeInfo(T)) {
-            .Optional => |o| if (self == .null) null else try into(self, o.child, arena),
-            .Bool => if (self.int == 1) true else false,
-            .Int, .ComptimeInt => @intCast(self.int),
-            .Float, .ComptimeFloat => @floatCast(self.float),
-            .Enum => if (comptime util.isDense(T)) std.meta.stringToEnum(T, self.string) orelse error.InvalidEnumTag else @enumFromInt(self.int),
+            .optional => |o| if (self == .null) null else try into(self, o.child, arena),
+            .bool => if (self.int == 1) true else false,
+            .int, .comptime_int => @intCast(self.int),
+            .float, .comptime_float => @floatCast(self.float),
+            .@"enum" => if (comptime util.isDense(T)) std.meta.stringToEnum(T, self.string) orelse error.InvalidEnumTag else @enumFromInt(self.int),
             else => {
                 if (comptime util.isJsonRepresentable(T)) {
                     return std.json.parseFromSliceLeaky(T, arena, self.string, .{

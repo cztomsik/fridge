@@ -35,7 +35,7 @@ pub const Statement = extern struct {
 
         var res: R = undefined;
 
-        inline for (@typeInfo(@TypeOf(res)).Struct.fields, 0..) |f, i| {
+        inline for (@typeInfo(@TypeOf(res)).@"struct".fields, 0..) |f, i| {
             const val = try self.column(i);
             @field(res, f.name) = try val.into(f.type, arena);
         }
