@@ -85,6 +85,12 @@ pub const Session = struct {
         return self.query(T).find(id);
     }
 
+    /// Shorthand for insert() + find()
+    pub fn create(self: *Session, comptime T: type, data: T) !T {
+        const id = try self.insert(T, data);
+        return try self.find(T, id) orelse unreachable;
+    }
+
     /// Insert a new record and return its primary key
     pub fn insert(self: *Session, comptime T: type, data: anytype) !util.Id(T) {
         try self.query(T).insert(data); // TODO: returning id?
