@@ -63,6 +63,7 @@ pub const Value = union(enum) {
                 if (comptime util.isJsonRepresentable(T)) {
                     return std.json.parseFromSliceLeaky(T, arena, self.string, .{
                         .allocate = .alloc_always,
+                        .ignore_unknown_fields = true,
                     });
                 }
 
