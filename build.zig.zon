@@ -12,7 +12,7 @@
 
     .dependencies = .{
         .sqlite_source = .{
-            .url = "https://www.sqlite.org/2024/sqlite-autoconf-3450000.tar.gz",
+            .url = "http://mirror-hk.koddos.net/blfs/conglomeration/sqlite/sqlite-autoconf-3450000.tar.gz",
             .hash = "1220491e02c1f645f41d46803d6fc039cbeef125a1d106f90a9cc718f6782df28a08",
         },
     },
