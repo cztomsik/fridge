@@ -395,31 +395,24 @@ test "query" {
 
 test "query.select()" {
     try expectSql(
-        db.query(Person).select(.name),
+        db.query(Person).select("name"),
         "SELECT name FROM Person",
     );
 
     try expectSql(
-        db.query(Person).select(.name).select(.age),
+        db.query(Person).select("name").select("age"),
         "SELECT name, age FROM Person",
     );
 
     try expectSql(
-        db.query(Person).selectRaw("name, age"),
+        db.query(Person).select("name, age"),
         "SELECT name, age FROM Person",
-    );
-}
-
-test "query.fromRaw()" {
-    try expectSql(
-        db.query(Person).fromRaw("Person p"),
-        "SELECT id, name, age FROM Person p",
     );
 }
 
 test "query.join()" {
     try expectSql(
-        db.query(Person).joinRaw("JOIN Address ON Person.id = Address.person_id"),
+        db.query(Person).join("Address ON Person.id = Address.person_id"),
         "SELECT id, name, age FROM Person JOIN Address ON Person.id = Address.person_id",
     );
 }
@@ -461,12 +454,12 @@ test "query.orWhere()" {
 // TODO: select()
 test "query.groupBy()" {
     try expectSql(
-        db.query(Person).groupBy(.name),
+        db.query(Person).groupBy("name"),
         "SELECT id, name, age FROM Person GROUP BY name",
     );
 
     try expectSql(
-        db.query(Person).groupBy(.name).groupBy(.age),
+        db.query(Person).groupBy("name").groupBy("age"),
         "SELECT id, name, age FROM Person GROUP BY name, age",
     );
 }
@@ -499,75 +492,66 @@ test "query.offset()" {
 
 test "query.insert()" {
     try expectSql(
-        db.query(Person).asInsert().values(.{}),
+        db.query(Person).insert(.{}),
         "INSERT INTO Person() VALUES ()",
     );
 
     try expectSql(
-        db.query(Person).asInsert().values(.{ .name = "Alice", .age = 20 }),
+        db.query(Person).insert(.{ .name = "Alice", .age = 20 }),
         "INSERT INTO Person(name, age) VALUES (?, ?)",
     );
-}
 
-test "query.onConflictRaw()" {
     try expectSql(
-        db.query(Person).asInsert().values(.{ .name = "Alice", .age = 20 }).onConflictRaw("DO NOTHING", .{}),
+        db.query(Person).insert(.{ .name = "Alice", .age = 20 }).onConflict("DO NOTHING", .{}),
         "INSERT INTO Person(name, age) VALUES (?, ?) ON CONFLICT DO NOTHING",
     );
 }
 
 test "query.update()" {
     try expectSql(
-        db.query(Person).asUpdate().setAll(.{ .name = "Alice" }),
+        db.query(Person).update(.{ .name = "Alice" }),
         "UPDATE Person SET name = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).asUpdate().setAll(.{ .name = "Alice" }),
+        db.query(Person).where(.age, 20).update(.{ .name = "Alice" }),
         "UPDATE Person SET name = ? WHERE age = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).orWhere(.name, "Bob").asUpdate().setAll(.{ .name = "Alice" }),
+        db.query(Person).where(.age, 20).orWhere(.name, "Bob").update(.{ .name = "Alice" }),
         "UPDATE Person SET name = ? WHERE age = ? OR name = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).asUpdate().setAll(.{ .name = "Alice", .age = 21 }),
+        db.query(Person).where(.age, 20).update(.{ .name = "Alice", .age = 21 }),
         "UPDATE Person SET name = ?, age = ? WHERE age = ?",
     );
-}
 
-test "query.set()" {
     try expectSql(
-        db.query(Person).asUpdate().set(.age, 21),
+        db.query(Person).update(.{}).set("age = ?", .{21}),
         "UPDATE Person SET age = ?",
     );
 
     try expectSql(
-        db.query(Person).asUpdate().setAll(.{ .name = "Alice" }).set(.age, 21),
-        "UPDATE Person SET name = ?, age = ?",
-    );
-
-    try expectSql(
-        db.query(Person).asUpdate().setAll(.{ .name = "Alice" }).setRaw("age = age + ?", .{1}),
-        "UPDATE Person SET name = ?, age = age + ?",
+        db.query(Person).update(.{ .name = "Alice" }).set("age = ?", .{21}).set("active = ?", .{true}),
+        "UPDATE Person SET name = ?, age = ?, active = ?",
     );
 }
 
 test "query.delete()" {
     try expectSql(
-        db.query(Person).asDelete(),
+        db.query(Person).delete(),
         "DELETE FROM Person",
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).asDelete(),
+        db.query(Person).where(.age, 20).delete(),
         "DELETE FROM Person WHERE age = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).orWhere(.name, "Bob").asDelete(),
+        db.query(Person).where(.age, 20).orWhere(.name, "Bob").delete(),
         "DELETE FROM Person WHERE age = ? OR name = ?",
     );
 }
