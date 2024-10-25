@@ -4,6 +4,7 @@ const util = @import("util.zig");
 const Connection = @import("connection.zig").Connection;
 const Pool = @import("pool.zig").Pool;
 const Statement = @import("statement.zig").Statement;
+const RawQuery = @import("raw.zig").Query;
 const Query = @import("query.zig").Query;
 const Value = @import("value.zig").Value;
 
@@ -59,18 +60,15 @@ pub const Session = struct {
     }
 
     pub fn get(self: *Session, comptime T: type, sql: []const u8, args: anytype) !?T {
-        var stmt = try self.prepare(sql, args);
-        defer stmt.deinit();
-
-        if (try stmt.next(struct { T }, self.arena)) |row| {
-            return row[0];
-        }
-
-        return null;
+        return self.raw(sql, args).get(T);
     }
 
-    pub fn query(self: *Session, comptime T: type) Query(T, T) {
-        return .{ .session = self };
+    pub fn raw(self: *Session, sql: []const u8, args: anytype) RawQuery {
+        return RawQuery.raw(self, sql, args);
+    }
+
+    pub fn query(self: *Session, comptime T: type) Query(T) {
+        return .init(self);
     }
 
     // TODO: this is useless without filter, ordering, paging, ...
@@ -93,18 +91,18 @@ pub const Session = struct {
 
     /// Insert a new record and return its primary key
     pub fn insert(self: *Session, comptime T: type, data: anytype) !util.Id(T) {
-        try self.query(T).insert(data); // TODO: returning id?
+        try self.query(T).insert(data).exec(); // TODO: returning id?
         return @intCast(try self.conn.lastInsertRowId());
     }
 
     /// Update a record by its primary key.
     pub fn update(self: *Session, comptime T: type, id: util.Id(T), data: anytype) !void {
-        return self.query(T).where(.id, id).update(data);
+        return self.query(T).where(.id, id).update(data).exec();
     }
 
     /// Delete a record by its primary key.
     pub fn delete(self: *Session, comptime T: type, id: util.Id(T)) !void {
-        try self.query(T).where(.id, id).delete();
+        try self.query(T).where(.id, id).delete().exec();
     }
 };
 
