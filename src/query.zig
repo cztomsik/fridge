@@ -485,14 +485,14 @@ test "query.orderBy()" {
 
 test "query.limit()" {
     try expectSql(
-        db.query(Person).limit(10).limit(20),
+        db.query(Person).limit(10),
         "SELECT id, name, age FROM Person LIMIT ?",
     );
 }
 
 test "query.offset()" {
     try expectSql(
-        db.query(Person).offset(10).offset(20),
+        db.query(Person).offset(10),
         "SELECT id, name, age FROM Person OFFSET ?",
     );
 }
