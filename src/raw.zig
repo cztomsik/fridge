@@ -249,3 +249,37 @@ pub const Query = struct {
         return res;
     }
 };
+
+const expectSql = @import("testing.zig").expectSql;
+const fakeDb = @import("testing.zig").fakeDb;
+
+test "insert" {
+    var db = try fakeDb();
+    defer db.deinit();
+    const insert = Query.init(&db).insert();
+
+    try expectSql(insert, "INSERT");
+    try expectSql(insert.into("Person"), "INSERT INTO Person");
+    try expectSql(insert.into("Person").cols("(name, age)"), "INSERT INTO Person(name, age)");
+    try expectSql(insert.into("Person").cols("(name, age)").values("(?, ?)", .{ "Alice", 18 }), "INSERT INTO Person(name, age) VALUES (?, ?)");
+}
+
+test "update" {
+    var db = try fakeDb();
+    defer db.deinit();
+    const update = Query.init(&db).update();
+
+    try expectSql(update, "UPDATE");
+    try expectSql(update.table("Person"), "UPDATE Person");
+    try expectSql(update.table("Person").set("age = ?", .{18}), "UPDATE Person SET age = ?");
+}
+
+test "delete" {
+    var db = try fakeDb();
+    defer db.deinit();
+    const delete = Query.init(&db).delete();
+
+    try expectSql(delete, "DELETE");
+    try expectSql(delete.from("Person"), "DELETE FROM Person");
+    try expectSql(delete.from("Person").where("age < ?", .{18}), "DELETE FROM Person WHERE age < ?");
+}
