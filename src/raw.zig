@@ -57,9 +57,17 @@ pub const Query = struct {
         return init(session).append("head", .raw, sql, args);
     }
 
+    pub fn table(self: Query, sql: []const u8) Query {
+        const part = self.session.arena.create(Part) catch @panic("OOM");
+        part.* = .{ .kind = .raw, .sql = sql };
+        return self.reset("tables", part);
+    }
+
     pub fn insert(self: Query) Query {
         return self.reset("head", comptime &.{ .kind = .raw, .sql = "INSERT" });
     }
+
+    pub const into = table;
 
     pub fn cols(self: Query, sql: []const u8) Query {
         return self.append("tables", .raw, sql, .{});
@@ -103,14 +111,7 @@ pub const Query = struct {
         return self.append("head", .SELECT, sql, .{});
     }
 
-    pub fn table(self: Query, sql: []const u8) Query {
-        const part = self.session.arena.create(Part) catch @panic("OOM");
-        part.* = .{ .kind = .raw, .sql = sql };
-        return self.reset("tables", part);
-    }
-
     pub const from = table;
-    pub const into = table;
 
     pub fn join(self: Query, sql: []const u8) Query {
         return self.append("tables", .JOIN, sql, .{});
