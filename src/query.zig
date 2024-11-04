@@ -140,20 +140,13 @@ const Person = struct {
     age: u8,
 };
 
-var _arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-var db: Session = .{ .arena = _arena.allocator(), .conn = undefined };
-
-fn expectSql(q: anytype, sql: []const u8) !void {
-    defer _ = _arena.reset(.free_all);
-
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    defer buf.deinit();
-
-    try q.toSql(&buf);
-    try std.testing.expectEqualStrings(sql, buf.items);
-}
+const expectSql = @import("testing.zig").expectSql;
+const fakeDb = @import("testing.zig").fakeDb;
 
 test "query" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person),
         "SELECT id, name, age FROM Person",
@@ -161,6 +154,9 @@ test "query" {
 }
 
 test "query.select()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).select("name"),
         "SELECT name FROM Person",
@@ -178,6 +174,9 @@ test "query.select()" {
 }
 
 test "query.join()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).join("Address ON Person.id = Address.person_id"),
         "SELECT id, name, age FROM Person JOIN Address ON Person.id = Address.person_id",
@@ -185,6 +184,9 @@ test "query.join()" {
 }
 
 test "query.where()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).where(.name, "Alice"),
         "SELECT id, name, age FROM Person WHERE name = ?",
@@ -202,6 +204,9 @@ test "query.where()" {
 }
 
 test "query.orWhere()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).orWhere(.name, "Alice"),
         "SELECT id, name, age FROM Person WHERE name = ?",
@@ -220,6 +225,9 @@ test "query.orWhere()" {
 
 // TODO: select()
 test "query.groupBy()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).groupBy("name"),
         "SELECT id, name, age FROM Person GROUP BY name",
@@ -232,6 +240,9 @@ test "query.groupBy()" {
 }
 
 test "query.orderBy()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).orderBy(.name, .asc),
         "SELECT id, name, age FROM Person ORDER BY name asc",
@@ -244,6 +255,9 @@ test "query.orderBy()" {
 }
 
 test "query.limit()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).limit(10),
         "SELECT id, name, age FROM Person LIMIT ?",
@@ -251,6 +265,9 @@ test "query.limit()" {
 }
 
 test "query.offset()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).offset(10),
         "SELECT id, name, age FROM Person OFFSET ?",
@@ -258,6 +275,9 @@ test "query.offset()" {
 }
 
 test "query.insert()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).insert(.{}),
         "INSERT INTO Person() VALUES ()",
@@ -275,6 +295,9 @@ test "query.insert()" {
 }
 
 test "query.update()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).update(.{ .name = "Alice" }),
         "UPDATE Person SET name = ?",
@@ -307,6 +330,9 @@ test "query.update()" {
 }
 
 test "query.delete()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
     try expectSql(
         db.query(Person).delete(),
         "DELETE FROM Person",
