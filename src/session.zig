@@ -107,27 +107,21 @@ pub const Session = struct {
 };
 
 const t = std.testing;
+const createDb = @import("testing.zig").createDb;
 
 const Person = struct {
     id: u32,
     name: []const u8,
 };
 
-fn open() !Session {
-    var db = try Session.open(@import("sqlite.zig").SQLite3, t.allocator, .{ .filename = ":memory:" });
-    errdefer db.deinit();
-
-    try db.conn.execAll(
-        \\CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT);
-        \\INSERT INTO Person (name) VALUES ('Alice');
-        \\INSERT INTO Person (name) VALUES ('Bob');
-    );
-
-    return db;
-}
+const ddl =
+    \\CREATE TABLE Person (id INTEGER PRIMARY KEY, name TEXT);
+    \\INSERT INTO Person (name) VALUES ('Alice');
+    \\INSERT INTO Person (name) VALUES ('Bob');
+;
 
 test "db.prepare()" {
-    var db = try open();
+    var db = try createDb(ddl);
     defer db.deinit();
 
     var stmt = try db.prepare("SELECT 1 + ?", .{1});
@@ -137,7 +131,7 @@ test "db.prepare()" {
 }
 
 test "db.exec()" {
-    var db = try open();
+    var db = try createDb(ddl);
     defer db.deinit();
 
     try db.exec("INSERT INTO Person (name) VALUES (?)", .{"Charlie"});
@@ -146,14 +140,14 @@ test "db.exec()" {
 }
 
 test "db.get()" {
-    var db = try open();
+    var db = try createDb(ddl);
     defer db.deinit();
 
     try t.expectEqual(123, try db.get(u32, "SELECT ? + 23", .{100}));
 }
 
 test "db.query(T).xxx() value methods" {
-    var db = try open();
+    var db = try createDb(ddl);
     defer db.deinit();
 
     var q = db.query(Person);
@@ -165,7 +159,7 @@ test "db.query(T).xxx() value methods" {
 }
 
 test "db.query(T).findAll()" {
-    var db = try open();
+    var db = try createDb(ddl);
     defer db.deinit();
 
     try t.expectEqualDeep(&[_]Person{
@@ -175,7 +169,7 @@ test "db.query(T).findAll()" {
 }
 
 test "db.find(T, id)" {
-    var db = try open();
+    var db = try createDb(ddl);
     defer db.deinit();
 
     try t.expectEqualDeep(
@@ -185,16 +179,16 @@ test "db.find(T, id)" {
 }
 
 test "db.insert(T, data)" {
-    var db = try open();
+    var db = try createDb(ddl);
     defer db.deinit();
 
     _ = try db.insert(Person, .{ .name = "Charlie" });
-    try t.expectEqualDeep(3, db.conn.lastInsertRowId());
+    try t.expectEqual(3, db.conn.lastInsertRowId());
     try t.expectEqual(1, db.conn.rowsAffected());
 }
 
 test "db.update(T, id, data)" {
-    var db = try open();
+    var db = try createDb(ddl);
     defer db.deinit();
 
     try db.update(Person, 1, .{ .name = "Sarah" });
@@ -203,7 +197,7 @@ test "db.update(T, id, data)" {
 }
 
 test "db.delete(T, id)" {
-    var db = try open();
+    var db = try createDb(ddl);
     defer db.deinit();
 
     try db.delete(Person, 1);
