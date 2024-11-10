@@ -253,6 +253,16 @@ pub const Query = struct {
 const expectSql = @import("testing.zig").expectSql;
 const fakeDb = @import("testing.zig").fakeDb;
 
+test "select" {
+    var db = try fakeDb();
+    defer db.deinit();
+    const select1 = Query.init(&db).select("1");
+
+    try expectSql(select1, "SELECT 1");
+    try expectSql(select1.select("2"), "SELECT 1, 2");
+    try expectSql(select1.reselect("2"), "SELECT 2");
+}
+
 test "insert" {
     var db = try fakeDb();
     defer db.deinit();
@@ -282,4 +292,14 @@ test "delete" {
     try expectSql(delete, "DELETE");
     try expectSql(delete.from("Person"), "DELETE FROM Person");
     try expectSql(delete.from("Person").where("age < ?", .{18}), "DELETE FROM Person WHERE age < ?");
+}
+
+test "raw" {
+    var db = try fakeDb();
+    defer db.deinit();
+    const raw = db.raw("SELECT DISTINCT name", .{});
+
+    try expectSql(raw, "SELECT DISTINCT name");
+    try expectSql(raw.from("Person"), "SELECT DISTINCT name FROM Person");
+    try expectSql(raw.from("Person").where("age > ?", .{18}), "SELECT DISTINCT name FROM Person WHERE age > ?");
 }
