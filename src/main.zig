@@ -15,5 +15,5 @@ pub const Query = @import("query.zig").Query;
 pub const migrate = @import("migrate.zig").migrate;
 
 test {
-    std.testing.refAllDecls(@This());
+    std.testing.refAllDeclsRecursive(@This());
 }
