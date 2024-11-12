@@ -59,10 +59,6 @@ pub const Session = struct {
         try stmt.exec();
     }
 
-    pub fn get(self: *Session, comptime T: type, sql: []const u8, args: anytype) !?T {
-        return self.raw(sql, args).get(T);
-    }
-
     pub fn raw(self: *Session, sql: []const u8, args: anytype) RawQuery {
         return RawQuery.raw(self, sql, args);
     }
@@ -139,11 +135,11 @@ test "db.exec()" {
     try t.expectEqual(1, db.conn.rowsAffected());
 }
 
-test "db.get()" {
+test "db.raw().get()" {
     var db = try createDb(ddl);
     defer db.deinit();
 
-    try t.expectEqual(123, try db.get(u32, "SELECT ? + 23", .{100}));
+    try t.expectEqual(123, try db.raw("SELECT ? + 23", .{100}).get(u32));
 }
 
 test "db.query(T).xxx() value methods" {

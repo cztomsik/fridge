@@ -63,7 +63,7 @@ fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
             // to know which columns are common to both and we need to do it in a
             // new block so it gets deinitialized and we can then drop and rename
             // the temp table
-            const cols = try db.get([]const u8, "SELECT GROUP_CONCAT(name) FROM (SELECT name FROM pragma_table_xinfo(?) INTERSECT SELECT name FROM pragma_table_info('temp'))", .{obj.name});
+            const cols = try db.raw("SELECT GROUP_CONCAT(name) FROM (SELECT name FROM pragma_table_xinfo(?) INTERSECT SELECT name FROM pragma_table_info('temp'))", .{obj.name}).get([]const u8);
 
             // Copy data from old table to temp table
             const copy_sql = try std.fmt.allocPrint(db.arena, "INSERT INTO temp({0s}) SELECT {0s} FROM {1s}", .{ cols.?, obj.name });
