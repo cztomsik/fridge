@@ -10,7 +10,7 @@ const Part = struct {
     sql: []const u8 = "",
     args: []const Value = &.{},
 
-    pub const Kind = enum { raw, SELECT, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", VALUES, SET, @"ON CONFLICT" };
+    pub const Kind = enum { raw, SELECT, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", VALUES, SET, @"ON CONFLICT", RETURNING };
 
     fn toSql(self: Part, buf: *std.ArrayList(u8)) !void {
         if (self.prev) |p| try p.toSql(buf);
@@ -149,6 +149,10 @@ pub const Query = struct {
         return self.append("tail", .raw, " OFFSET ?", .{i});
     }
 
+    pub fn returning(self: Query, sql: []const u8) Query {
+        return self.append("tail", .RETURNING, sql, .{});
+    }
+
     pub fn exec(self: Query) !void {
         var stmt = try self.prepare();
         defer stmt.deinit();
@@ -270,6 +274,7 @@ test "insert" {
 
     try expectSql(insert, "INSERT");
     try expectSql(insert.into("Person"), "INSERT INTO Person");
+    try expectSql(insert.into("Person").returning("id"), "INSERT INTO Person RETURNING id");
     try expectSql(insert.into("Person").cols("(name, age)"), "INSERT INTO Person(name, age)");
     try expectSql(insert.into("Person").cols("(name, age)").values("(?, ?)", .{ "Alice", 18 }), "INSERT INTO Person(name, age) VALUES (?, ?)");
 }
