@@ -171,6 +171,20 @@ pub const Query = struct {
         return null;
     }
 
+    pub fn pluck(self: Query, comptime R: type) ![]const R {
+        var stmt = try self.prepare();
+        defer stmt.deinit();
+
+        var res = std.ArrayList(R).init(self.session.arena);
+        errdefer res.deinit();
+
+        while (try stmt.next(struct { R }, self.session.arena)) |row| {
+            try res.append(row[0]);
+        }
+
+        return res.toOwnedSlice();
+    }
+
     pub fn fetchOne(self: Query, comptime R: type) !?R {
         var stmt = try self.prepare();
         defer stmt.deinit();

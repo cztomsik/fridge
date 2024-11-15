@@ -135,11 +135,13 @@ test "db.exec()" {
     try t.expectEqual(1, db.conn.rowsAffected());
 }
 
-test "db.raw().get()" {
+test "db.raw()" {
     var db = try createDb(ddl);
     defer db.deinit();
 
-    try t.expectEqual(123, try db.raw("SELECT ? + 23", .{100}).get(u32));
+    try t.expectEqual(1, try db.raw("SELECT 1", .{}).get(u32));
+    try t.expectEqual(3, try db.raw("SELECT 1 + ?", .{2}).get(u32));
+    try t.expectEqualSlices(u32, &.{ 1, 2 }, try db.raw("SELECT id FROM Person", .{}).pluck(u32));
 }
 
 test "db.query(T).xxx() value methods" {
@@ -152,6 +154,7 @@ test "db.query(T).xxx() value methods" {
     try t.expectEqual(2, q.count(.id));
     try t.expectEqual(1, q.min(.id));
     try t.expectEqual(2, q.max(.id));
+    try t.expectEqualSlices(u32, &.{ 1, 2 }, try q.pluck(.id));
 }
 
 test "db.query(T).findAll()" {

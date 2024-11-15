@@ -104,6 +104,10 @@ pub fn Query(comptime T: type) type {
             return self.raw.reselect(sql);
         }
 
+        pub fn pluck(self: Q, comptime col: Col) ![]const std.meta.FieldType(T, col) {
+            return self.select(@tagName(col)).pluck(std.meta.FieldType(T, col));
+        }
+
         pub fn groupBy(self: Q, sql: []const u8) RawQuery {
             return self.raw.groupBy(sql);
         }
