@@ -42,7 +42,7 @@ const Part = struct {
 };
 
 pub const Query = struct {
-    session: *Session,
+    db: *Session,
     parts: struct {
         head: ?*const Part = null, //   SELECT, <raw>
         tables: ?*const Part = null, // <raw>, JOIN
@@ -50,16 +50,16 @@ pub const Query = struct {
         tail: ?*const Part = null, //   everything else
     } = .{},
 
-    pub fn init(session: *Session) Query {
-        return .{ .session = session };
+    pub fn init(db: *Session) Query {
+        return .{ .db = db };
     }
 
-    pub fn raw(session: *Session, sql: []const u8, args: anytype) Query {
-        return init(session).append("head", .raw, sql, args);
+    pub fn raw(db: *Session, sql: []const u8, args: anytype) Query {
+        return init(db).append("head", .raw, sql, args);
     }
 
     pub fn table(self: Query, sql: []const u8) Query {
-        const part = self.session.arena.create(Part) catch @panic("OOM");
+        const part = self.db.arena.create(Part) catch @panic("OOM");
         part.* = .{ .kind = .raw, .sql = sql };
         return self.replace("tables", part);
     }
@@ -103,7 +103,7 @@ pub const Query = struct {
     }
 
     pub fn select(self: Query, sql: []const u8) Query {
-        const part = self.session.arena.create(Part) catch @panic("OOM");
+        const part = self.db.arena.create(Part) catch @panic("OOM");
         part.* = .{ .kind = .SELECT, .sql = sql };
         return self.replace("head", part);
     }
@@ -161,7 +161,7 @@ pub const Query = struct {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        if (try stmt.next(struct { T }, self.session.arena)) |row| {
+        if (try stmt.next(struct { T }, self.db.arena)) |row| {
             return row[0];
         }
 
@@ -172,10 +172,10 @@ pub const Query = struct {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        var res = std.ArrayList(R).init(self.session.arena);
+        var res = std.ArrayList(R).init(self.db.arena);
         errdefer res.deinit();
 
-        while (try stmt.next(struct { R }, self.session.arena)) |row| {
+        while (try stmt.next(struct { R }, self.db.arena)) |row| {
             try res.append(row[0]);
         }
 
@@ -186,17 +186,17 @@ pub const Query = struct {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        return stmt.next(R, self.session.arena);
+        return stmt.next(R, self.db.arena);
     }
 
     pub fn fetchAll(self: Query, comptime R: type) ![]const R {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        var res = std.ArrayList(R).init(self.session.arena);
+        var res = std.ArrayList(R).init(self.db.arena);
         errdefer res.deinit();
 
-        while (try stmt.next(R, self.session.arena)) |row| {
+        while (try stmt.next(R, self.db.arena)) |row| {
             try res.append(row);
         }
 
@@ -222,10 +222,10 @@ pub const Query = struct {
     }
 
     pub fn prepare(self: Query) !Statement {
-        var buf = try SqlBuf.init(self.session.arena);
+        var buf = try SqlBuf.init(self.db.arena);
         try buf.append(self);
 
-        var stmt = try self.session.prepare(buf.buf.items, .{});
+        var stmt = try self.db.prepare(buf.buf.items, .{});
         errdefer stmt.deinit();
 
         var i: usize = 0;
@@ -238,8 +238,8 @@ pub const Query = struct {
     }
 
     fn append(self: Query, comptime slot: []const u8, kind: Part.Kind, sql: []const u8, args: anytype) Query {
-        const part = self.session.arena.create(Part) catch @panic("OOM");
-        part.* = .{ .prev = @field(self.parts, slot), .kind = kind, .sql = sql, .args = toValues(self.session, args) };
+        const part = self.db.arena.create(Part) catch @panic("OOM");
+        part.* = .{ .prev = @field(self.parts, slot), .kind = kind, .sql = sql, .args = toValues(self.db, args) };
         return replace(self, slot, part);
     }
 

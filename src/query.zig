@@ -13,8 +13,8 @@ pub fn Query(comptime T: type) type {
         const Q = @This();
         const Col = std.meta.FieldEnum(T);
 
-        pub fn init(session: *Session) Q {
-            return .{ .raw = RawQuery.init(session).select(util.columns(T)).table(util.tableName(T)) };
+        pub fn init(db: *Session) Q {
+            return .{ .raw = RawQuery.init(db).select(util.columns(T)).table(util.tableName(T)) };
         }
 
         pub fn from(self: Q, sql: []const u8) Q {
