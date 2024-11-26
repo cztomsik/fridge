@@ -9,7 +9,7 @@ const Part = struct {
     prev: ?*const Part = null,
     kind: Kind,
     sql: []const u8 = "",
-    args: []const Value = &.{},
+    args: Args = .empty,
 
     pub const Kind = enum { raw, SELECT, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", VALUES, SET, @"ON CONFLICT", RETURNING };
 
@@ -34,10 +34,7 @@ const Part = struct {
     fn bind(self: Part, stmt: anytype, i: *usize) !void {
         if (self.prev) |p| try p.bind(stmt, i);
 
-        for (self.args) |arg| {
-            try stmt.bind(i.*, arg);
-            i.* += 1;
-        }
+        try self.args.bind(stmt, i);
     }
 };
 
@@ -239,7 +236,7 @@ pub const Query = struct {
 
     fn append(self: Query, comptime slot: []const u8, kind: Part.Kind, sql: []const u8, args: anytype) Query {
         const part = self.db.arena.create(Part) catch @panic("OOM");
-        part.* = .{ .prev = @field(self.parts, slot), .kind = kind, .sql = sql, .args = toValues(self.db, args) };
+        part.* = .{ .prev = @field(self.parts, slot), .kind = kind, .sql = sql, .args = toArgs(self.db, args) };
         return replace(self, slot, part);
     }
 
@@ -249,20 +246,36 @@ pub const Query = struct {
         return copy;
     }
 
-    fn toValues(session: *Session, args: anytype) []const Value {
+    fn toArgs(db: *Session, args: anytype) Args {
         const fields = @typeInfo(@TypeOf(args)).@"struct".fields;
 
-        if (fields.len == 0) {
-            return &.{};
+        return switch (fields.len) {
+            0 => .empty,
+            1 => .{ .one = Value.from(@field(args, fields[0].name), db.arena) catch @panic("OOM") },
+            else => {
+                const res = db.arena.alloc(Value, fields.len) catch @panic("OOM");
+
+                inline for (fields, 0..) |f, i| {
+                    res[i] = Value.from(@field(args, f.name), db.arena) catch @panic("OOM");
+                }
+
+                return .{ .many = res };
+            },
+        };
+    }
+};
+
+const Args = union(enum) {
+    empty,
+    one: Value,
+    many: []const Value,
+
+    fn bind(self: Args, stmt: anytype, i: *usize) !void {
+        switch (self) {
+            .empty => {},
+            .one => |arg| try arg.bind(stmt, i),
+            .many => |args| for (args) |arg| try arg.bind(stmt, i),
         }
-
-        const res = session.arena.alloc(Value, fields.len) catch @panic("OOM");
-
-        inline for (fields, 0..) |f, i| {
-            res[i] = Value.from(@field(args, f.name), session.arena) catch @panic("OOM");
-        }
-
-        return res;
     }
 };
 
