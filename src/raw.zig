@@ -61,11 +61,11 @@ pub const Query = struct {
     pub fn table(self: Query, sql: []const u8) Query {
         const part = self.session.arena.create(Part) catch @panic("OOM");
         part.* = .{ .kind = .raw, .sql = sql };
-        return self.reset("tables", part);
+        return self.replace("tables", part);
     }
 
     pub fn insert(self: Query) Query {
-        return self.reset("head", comptime &.{ .kind = .raw, .sql = "INSERT" });
+        return self.replace("head", comptime &.{ .kind = .raw, .sql = "INSERT" });
     }
 
     pub const into = table;
@@ -83,7 +83,7 @@ pub const Query = struct {
     }
 
     pub fn update(self: Query) Query {
-        return self.reset("head", comptime &.{ .kind = .raw, .sql = "UPDATE" });
+        return self.replace("head", comptime &.{ .kind = .raw, .sql = "UPDATE" });
     }
 
     pub fn set(self: Query, sql: []const u8, args: anytype) Query {
@@ -99,13 +99,13 @@ pub const Query = struct {
     }
 
     pub fn delete(self: Query) Query {
-        return self.reset("head", comptime &.{ .kind = .raw, .sql = "DELETE" });
+        return self.replace("head", comptime &.{ .kind = .raw, .sql = "DELETE" });
     }
 
     pub fn select(self: Query, sql: []const u8) Query {
         const part = self.session.arena.create(Part) catch @panic("OOM");
         part.* = .{ .kind = .SELECT, .sql = sql };
-        return self.reset("head", part);
+        return self.replace("head", part);
     }
 
     pub const from = table;
@@ -240,10 +240,10 @@ pub const Query = struct {
     fn append(self: Query, comptime slot: []const u8, kind: Part.Kind, sql: []const u8, args: anytype) Query {
         const part = self.session.arena.create(Part) catch @panic("OOM");
         part.* = .{ .prev = @field(self.parts, slot), .kind = kind, .sql = sql, .args = toValues(self.session, args) };
-        return reset(self, slot, part);
+        return replace(self, slot, part);
     }
 
-    fn reset(self: Query, comptime slot: []const u8, part: *const Part) Query {
+    fn replace(self: Query, comptime slot: []const u8, part: *const Part) Query {
         var copy = self;
         @field(copy.parts, slot) = part;
         return copy;
