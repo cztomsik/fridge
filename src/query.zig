@@ -4,6 +4,7 @@ const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
 const RawQuery = @import("raw.zig").Query;
 const Statement = @import("statement.zig").Statement;
+const SqlBuf = @import("sql.zig").SqlBuf;
 
 pub fn Query(comptime T: type) type {
     return struct {
@@ -128,8 +129,8 @@ pub fn Query(comptime T: type) type {
             return self.raw.delete();
         }
 
-        pub fn toSql(self: Q, buf: *std.ArrayList(u8)) !void {
-            try self.raw.toSql(buf);
+        pub fn toSql(self: Q, buf: *SqlBuf) !void {
+            return buf.append(self.raw);
         }
 
         pub fn prepare(self: Q) !Statement {

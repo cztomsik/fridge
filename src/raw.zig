@@ -2,6 +2,7 @@ const std = @import("std");
 const Session = @import("session.zig").Session;
 const Value = @import("value.zig").Value;
 const Statement = @import("statement.zig").Statement;
+const SqlBuf = @import("sql.zig").SqlBuf;
 const util = @import("util.zig");
 
 const Part = struct {
@@ -12,8 +13,8 @@ const Part = struct {
 
     pub const Kind = enum { raw, SELECT, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", VALUES, SET, @"ON CONFLICT", RETURNING };
 
-    fn toSql(self: Part, buf: *std.ArrayList(u8)) !void {
-        if (self.prev) |p| try p.toSql(buf);
+    pub fn toSql(self: Part, buf: *SqlBuf) !void {
+        if (self.prev) |p| try buf.append(p);
 
         if (self.kind != .raw) {
             const comma = switch (self.kind) {
@@ -21,13 +22,13 @@ const Part = struct {
                 else => false,
             };
 
-            try buf.appendSlice(if (comma) ", " else switch (self.kind) {
+            try buf.append(if (comma) ", " else switch (self.kind) {
                 .SELECT => "SELECT ",
                 inline else => |t| " " ++ @tagName(t) ++ " ",
             });
         }
 
-        try buf.appendSlice(self.sql);
+        try buf.append(self.sql);
     }
 
     fn bind(self: Part, stmt: anytype, i: *usize) !void {
@@ -206,28 +207,29 @@ pub const Query = struct {
         return res.toOwnedSlice();
     }
 
-    pub fn toSql(self: Query, buf: *std.ArrayList(u8)) !void {
-        if (self.parts.head) |h| try h.toSql(buf);
+    pub fn toSql(self: Query, buf: *SqlBuf) !void {
+        if (self.parts.head) |h| try buf.append(h);
 
         if (self.parts.tables) |t| {
-            try buf.appendSlice(switch (std.ascii.toLower(buf.items[0])) {
-                'i' => " INTO ",
-                's', 'd' => " FROM ",
+            std.debug.assert(buf.buf.items.len > 1);
+            try buf.append(switch (std.ascii.toLower(buf.buf.items[1])) {
+                'e' => " FROM ", // SeLECT, DeLETE
+                'n' => " INTO ", // InSERT
                 else => " ",
             });
 
-            try t.toSql(buf);
+            try buf.append(t);
         }
 
-        if (self.parts.where) |w| try w.toSql(buf);
-        if (self.parts.tail) |t| try t.toSql(buf);
+        if (self.parts.where) |w| try buf.append(w);
+        if (self.parts.tail) |t| try buf.append(t);
     }
 
     pub fn prepare(self: Query) !Statement {
-        var buf = try std.ArrayList(u8).initCapacity(self.session.arena, 256);
-        try self.toSql(&buf);
+        var buf = try SqlBuf.init(self.session.arena);
+        try buf.append(self);
 
-        var stmt = try self.session.prepare(buf.items, .{});
+        var stmt = try self.session.prepare(buf.buf.items, .{});
         errdefer stmt.deinit();
 
         var i: usize = 0;
