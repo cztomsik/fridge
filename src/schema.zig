@@ -4,25 +4,25 @@ const RawQuery = @import("raw.zig").Query;
 const SqlBuf = @import("sql.zig").SqlBuf;
 
 pub const Schema = struct {
-    session: *Session,
+    db: *Session,
 
-    pub fn init(session: *Session) Schema {
-        return .{ .session = session };
+    pub fn init(db: *Session) Schema {
+        return .{ .db = db };
     }
 
     pub fn createTable(self: *const Schema, name: []const u8) *TableBuilder {
-        const res = self.session.arena.create(TableBuilder) catch @panic("OOM");
-        res.* = .{ .schema = self, .name = name };
+        const res = self.db.arena.create(TableBuilder) catch @panic("OOM");
+        res.* = .{ .db = self.db, .name = name };
         return res;
     }
 
     pub fn dropTable(self: *const Schema, name: []const u8) !void {
-        try self.session.raw("DROP TABLE", .{}).table(name).exec();
+        try self.db.raw("DROP TABLE", .{}).table(name).exec();
     }
 };
 
 pub const TableBuilder = struct {
-    schema: *const Schema,
+    db: *Session,
     name: []const u8,
     columns: std.ArrayListUnmanaged(Column) = .{},
     constraints: std.ArrayListUnmanaged(Constraint) = .{},
@@ -68,13 +68,13 @@ pub const TableBuilder = struct {
     }
 
     pub fn exec(self: TableBuilder) !void {
-        var buf = try SqlBuf.init(self.schema.session.arena);
+        var buf = try SqlBuf.init(self.db.arena);
         try buf.append(self);
-        try self.schema.session.exec(buf.buf.items, .{});
+        try self.db.exec(buf.buf.items, .{});
     }
 
     fn append(self: *TableBuilder, comptime slot: []const u8, item: std.meta.Child(@FieldType(TableBuilder, slot).Slice)) *TableBuilder {
-        @field(self, slot).append(self.schema.session.arena, item) catch @panic("OOM");
+        @field(self, slot).append(self.db.arena, item) catch @panic("OOM");
         return self;
     }
 };
