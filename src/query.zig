@@ -102,7 +102,7 @@ pub fn Query(comptime T: type) type {
         }
 
         pub fn select(self: Q, sql: []const u8) RawQuery {
-            return self.raw.reselect(sql);
+            return self.raw.select(sql);
         }
 
         pub fn pluck(self: Q, comptime col: Col) ![]const std.meta.FieldType(T, col) {
@@ -169,7 +169,7 @@ test "query.select()" {
 
     try expectSql(
         db.query(Person).select("name").select("age"),
-        "SELECT name, age FROM Person",
+        "SELECT age FROM Person",
     );
 
     try expectSql(

@@ -102,14 +102,10 @@ pub const Query = struct {
         return self.reset("head", comptime &.{ .kind = .raw, .sql = "DELETE" });
     }
 
-    pub fn reselect(self: Query, sql: []const u8) Query {
+    pub fn select(self: Query, sql: []const u8) Query {
         const part = self.session.arena.create(Part) catch @panic("OOM");
         part.* = .{ .kind = .SELECT, .sql = sql };
         return self.reset("head", part);
-    }
-
-    pub fn select(self: Query, sql: []const u8) Query {
-        return self.append("head", .SELECT, sql, .{});
     }
 
     pub const from = table;
@@ -279,8 +275,7 @@ test "select" {
     const select1 = Query.init(&db).select("1");
 
     try expectSql(select1, "SELECT 1");
-    try expectSql(select1.select("2"), "SELECT 1, 2");
-    try expectSql(select1.reselect("2"), "SELECT 2");
+    try expectSql(select1.select("2"), "SELECT 2");
 }
 
 test "insert" {
