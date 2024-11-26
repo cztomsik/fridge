@@ -7,6 +7,7 @@ const Statement = @import("statement.zig").Statement;
 const RawQuery = @import("raw.zig").Query;
 const Query = @import("query.zig").Query;
 const Value = @import("value.zig").Value;
+const Schema = @import("schema.zig").Schema;
 
 pub const Session = struct {
     arena: std.mem.Allocator,
@@ -64,6 +65,10 @@ pub const Session = struct {
     }
 
     pub fn query(self: *Session, comptime T: type) Query(T) {
+        return .init(self);
+    }
+
+    pub fn schema(self: *Session) Schema {
         return .init(self);
     }
 
