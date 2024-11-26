@@ -11,12 +11,12 @@ const Part = struct {
     sql: []const u8 = "",
     args: Args = .empty,
 
-    pub const Kind = enum { raw, SELECT, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", VALUES, SET, @"ON CONFLICT", RETURNING };
+    pub const Kind = enum { raw, cols, table, SELECT, INSERT, UPDATE, DELETE, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", VALUES, SET, @"ON CONFLICT", RETURNING };
 
     pub fn toSql(self: Part, buf: *SqlBuf) !void {
         if (self.prev) |p| try buf.append(p);
 
-        if (self.kind != .raw) {
+        if (self.kind != .raw and self.kind != .cols and self.kind != .table) {
             const comma = switch (self.kind) {
                 .SELECT, .@"GROUP BY", .@"ORDER BY", .SET => self.prev != null and self.prev.?.kind == self.kind,
                 else => false,
@@ -24,6 +24,7 @@ const Part = struct {
 
             try buf.append(if (comma) ", " else switch (self.kind) {
                 .SELECT => "SELECT ",
+                inline .INSERT, .UPDATE, .DELETE => |t| @tagName(t),
                 inline else => |t| " " ++ @tagName(t) ++ " ",
             });
         }
@@ -41,8 +42,8 @@ const Part = struct {
 pub const Query = struct {
     db: *Session,
     parts: struct {
-        head: ?*const Part = null, //   SELECT, <raw>
-        tables: ?*const Part = null, // <raw>, JOIN
+        head: ?*const Part = null, //   <raw>, SELECT, INSERT, UPDATE, DELETE
+        tables: ?*const Part = null, // JOIN, LEFT JOIN, cols, VALUES, SET
         where: ?*const Part = null, //  WHERE, AND, OR
         tail: ?*const Part = null, //   everything else
     } = .{},
@@ -52,39 +53,39 @@ pub const Query = struct {
     }
 
     pub fn raw(db: *Session, sql: []const u8, args: anytype) Query {
-        return init(db).append("head", .raw, sql, args);
+        return init(db).append(.raw, sql, args);
     }
 
     pub fn table(self: Query, sql: []const u8) Query {
         const part = self.db.arena.create(Part) catch @panic("OOM");
-        part.* = .{ .kind = .raw, .sql = sql };
-        return self.replace("tables", part);
+        part.* = .{ .kind = .table, .sql = sql };
+        return self.replace(part);
     }
 
     pub fn insert(self: Query) Query {
-        return self.replace("head", comptime &.{ .kind = .raw, .sql = "INSERT" });
+        return self.replace(comptime &.{ .kind = .INSERT });
     }
 
     pub const into = table;
 
     pub fn cols(self: Query, sql: []const u8) Query {
-        return self.append("tables", .raw, sql, .{});
+        return self.append(.cols, sql, .{});
     }
 
     pub fn values(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append("tables", .VALUES, sql, args);
+        return self.append(.VALUES, sql, args);
     }
 
     pub fn onConflict(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append("tail", .@"ON CONFLICT", sql, args);
+        return self.append(.@"ON CONFLICT", sql, args);
     }
 
     pub fn update(self: Query) Query {
-        return self.replace("head", comptime &.{ .kind = .raw, .sql = "UPDATE" });
+        return self.replace(comptime &.{ .kind = .UPDATE });
     }
 
     pub fn set(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append("tables", .SET, sql, args);
+        return self.append(.SET, sql, args);
     }
 
     pub fn setAll(self: Query, data: anytype) Query {
@@ -92,59 +93,59 @@ pub const Query = struct {
             return self;
         }
 
-        return self.append("tables", .SET, util.setters(@TypeOf(data)), data);
+        return self.append(.SET, util.setters(@TypeOf(data)), data);
     }
 
     pub fn delete(self: Query) Query {
-        return self.replace("head", comptime &.{ .kind = .raw, .sql = "DELETE" });
+        return self.replace(comptime &.{ .kind = .DELETE });
     }
 
     pub fn select(self: Query, sql: []const u8) Query {
         const part = self.db.arena.create(Part) catch @panic("OOM");
         part.* = .{ .kind = .SELECT, .sql = sql };
-        return self.replace("head", part);
+        return self.replace(part);
     }
 
     pub const from = table;
 
     pub fn join(self: Query, sql: []const u8) Query {
-        return self.append("tables", .JOIN, sql, .{});
+        return self.append(.JOIN, sql, .{});
     }
 
     pub fn leftJoin(self: Query, sql: []const u8) Query {
-        return self.append("tables", .@"LEFT JOIN", sql, .{});
+        return self.append(.@"LEFT JOIN", sql, .{});
     }
 
     pub fn where(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append("where", if (self.parts.where == null) .WHERE else .AND, sql, args);
+        return self.append(if (self.parts.where == null) .WHERE else .AND, sql, args);
     }
 
     pub fn orWhere(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append("where", if (self.parts.where == null) .WHERE else .OR, sql, args);
+        return self.append(if (self.parts.where == null) .WHERE else .OR, sql, args);
     }
 
     pub fn groupBy(self: Query, sql: []const u8) Query {
-        return self.append("tail", .@"GROUP BY", sql, .{});
+        return self.append(.@"GROUP BY", sql, .{});
     }
 
     pub fn having(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append("tail", .HAVING, sql, args);
+        return self.append(.HAVING, sql, args);
     }
 
     pub fn orderBy(self: Query, sql: []const u8) Query {
-        return self.append("tail", .@"ORDER BY", sql, .{});
+        return self.append(.@"ORDER BY", sql, .{});
     }
 
     pub fn limit(self: Query, n: i32) Query {
-        return self.append("tail", .raw, " LIMIT ?", .{n});
+        return self.append(.raw, " LIMIT ?", .{n});
     }
 
     pub fn offset(self: Query, i: i32) Query {
-        return self.append("tail", .raw, " OFFSET ?", .{i});
+        return self.append(.raw, " OFFSET ?", .{i});
     }
 
     pub fn returning(self: Query, sql: []const u8) Query {
-        return self.append("tail", .RETURNING, sql, .{});
+        return self.append(.RETURNING, sql, .{});
     }
 
     pub fn exec(self: Query) !void {
@@ -234,16 +235,30 @@ pub const Query = struct {
         return stmt;
     }
 
-    fn append(self: Query, comptime slot: []const u8, kind: Part.Kind, sql: []const u8, args: anytype) Query {
+    pub fn append(self: Query, kind: Part.Kind, sql: []const u8, args: anytype) Query {
         const part = self.db.arena.create(Part) catch @panic("OOM");
-        part.* = .{ .prev = @field(self.parts, slot), .kind = kind, .sql = sql, .args = toArgs(self.db, args) };
-        return replace(self, slot, part);
+        part.* = .{ .prev = self.slot(kind).*, .kind = kind, .sql = sql, .args = toArgs(self.db, args) };
+        return self.replace(part);
     }
 
-    fn replace(self: Query, comptime slot: []const u8, part: *const Part) Query {
+    fn replace(self: Query, part: *const Part) Query {
         var copy = self;
-        @field(copy.parts, slot) = part;
+        copy.slot(part.kind).* = part;
         return copy;
+    }
+
+    fn slot(self: anytype, kind: Part.Kind) switch (@TypeOf(self)) {
+        *const Query => *const ?*const Part,
+        *Query => *?*const Part,
+        else => unreachable,
+    } {
+        return switch (kind) {
+            .raw => if (self.parts.head == null) &self.parts.head else &self.parts.tail,
+            .SELECT, .INSERT, .UPDATE, .DELETE => &self.parts.head,
+            .table, .cols, .VALUES, .SET, .JOIN, .@"LEFT JOIN" => &self.parts.tables,
+            .WHERE, .AND, .OR => &self.parts.where,
+            else => &self.parts.tail,
+        };
     }
 
     fn toArgs(db: *Session, args: anytype) Args {
