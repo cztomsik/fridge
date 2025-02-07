@@ -89,7 +89,7 @@ pub fn isDense(comptime E: type) bool {
 pub fn isJsonRepresentable(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .array, .@"struct", .@"union" => true,
-        .pointer => |p| p.size == .Slice,
+        .pointer => |p| p.size == .slice,
         else => false,
     };
 }
