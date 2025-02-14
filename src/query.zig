@@ -26,7 +26,7 @@ pub fn Query(comptime T: type) type {
         }
 
         pub fn where(self: Q, comptime col: Col, val: @FieldType(T, @tagName(col))) Q {
-            return self.whereRaw(@tagName(col) ++ " = ?", .{val});
+            return self.whereRaw(@tagName(col) ++ " = ?", val);
         }
 
         pub fn whereRaw(self: Q, sql: []const u8, args: anytype) Q {
@@ -34,7 +34,7 @@ pub fn Query(comptime T: type) type {
         }
 
         pub fn orWhere(self: Q, comptime col: Col, val: @FieldType(T, @tagName(col))) Q {
-            return self.orWhereRaw(@tagName(col) ++ " = ?", .{val});
+            return self.orWhereRaw(@tagName(col) ++ " = ?", val);
         }
 
         pub fn orWhereRaw(self: Q, sql: []const u8, args: anytype) Q {
@@ -203,7 +203,7 @@ test "query.where()" {
     );
 
     try expectSql(
-        db.query(Person).whereRaw("name = ?", .{"Alice"}).whereRaw("age > ?", .{20}),
+        db.query(Person).whereRaw("name = ?", "Alice").whereRaw("age > ?", 20),
         "SELECT id, name, age FROM Person WHERE name = ? AND age > ?",
     );
 }
@@ -223,7 +223,7 @@ test "query.orWhere()" {
     );
 
     try expectSql(
-        db.query(Person).whereRaw("name = ?", .{"Alice"}).orWhereRaw("age > ?", .{20}),
+        db.query(Person).whereRaw("name = ?", "Alice").orWhereRaw("age > ?", 20),
         "SELECT id, name, age FROM Person WHERE name = ? OR age > ?",
     );
 }
@@ -294,7 +294,7 @@ test "query.insert()" {
     );
 
     try expectSql(
-        db.query(Person).insert(.{ .name = "Alice", .age = 20 }).onConflict("DO NOTHING", .{}),
+        db.query(Person).insert(.{ .name = "Alice", .age = 20 }).onConflict("DO NOTHING", {}),
         "INSERT INTO Person(name, age) VALUES (?, ?) ON CONFLICT DO NOTHING",
     );
 }
@@ -324,12 +324,12 @@ test "query.update()" {
     );
 
     try expectSql(
-        db.query(Person).update(.{}).set("age = ?", .{21}),
+        db.query(Person).update(.{}).set("age = ?", 21),
         "UPDATE Person SET age = ?",
     );
 
     try expectSql(
-        db.query(Person).update(.{ .name = "Alice" }).set("age = ?", .{21}).set("active = ?", .{true}),
+        db.query(Person).update(.{ .name = "Alice" }).set("age = ?", 21).set("active = ?", true),
         "UPDATE Person SET name = ?, age = ?, active = ?",
     );
 }

@@ -144,9 +144,9 @@ test "db.raw()" {
     var db = try createDb(ddl);
     defer db.deinit();
 
-    try t.expectEqual(1, try db.raw("SELECT 1", .{}).get(u32));
-    try t.expectEqual(3, try db.raw("SELECT 1 + ?", .{2}).get(u32));
-    try t.expectEqualSlices(u32, &.{ 1, 2 }, try db.raw("SELECT id FROM Person", .{}).pluck(u32));
+    try t.expectEqual(1, try db.raw("SELECT 1", {}).get(u32));
+    try t.expectEqual(3, try db.raw("SELECT 1 + ?", 2).get(u32));
+    try t.expectEqualSlices(u32, &.{ 1, 2 }, try db.raw("SELECT id FROM Person", {}).pluck(u32));
 }
 
 test "db.query(T).xxx() value methods" {

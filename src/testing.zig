@@ -26,6 +26,6 @@ pub fn expectSql(q: anytype, expected: []const u8) !void {
 pub fn expectDdl(db: *Session, object_name: []const u8, expected: []const u8) !void {
     try std.testing.expectEqualStrings(
         expected,
-        (try db.raw("SELECT sql FROM sqlite_master", .{}).where("name = ?", .{object_name}).get([]const u8)).?,
+        (try db.raw("SELECT sql FROM sqlite_master", {}).where("name = ?", object_name).get([]const u8)).?,
     );
 }

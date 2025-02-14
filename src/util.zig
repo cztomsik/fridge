@@ -68,6 +68,13 @@ pub fn setters(comptime T: type) []const u8 {
     };
 }
 
+pub fn isTuple(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .@"struct" => |s| s.is_tuple,
+        else => false,
+    };
+}
+
 pub fn isString(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .pointer => |ptr| ptr.child == u8 or switch (@typeInfo(ptr.child)) {

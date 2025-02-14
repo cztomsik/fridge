@@ -9,7 +9,7 @@ const Part = struct {
     prev: ?*const Part = null,
     kind: Kind,
     sql: []const u8 = "",
-    args: Args = .empty,
+    args: Args = .none,
 
     pub const Kind = enum { raw, cols, table, SELECT, INSERT, UPDATE, DELETE, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", VALUES, SET, @"ON CONFLICT", RETURNING };
 
@@ -53,7 +53,7 @@ pub const Query = struct {
     }
 
     pub fn raw(db: *Session, sql: []const u8, args: anytype) Query {
-        return init(db).append(.raw, sql, args);
+        return init(db).append(.raw, sql, .from(args, db));
     }
 
     pub fn table(self: Query, sql: []const u8) Query {
@@ -69,15 +69,15 @@ pub const Query = struct {
     pub const into = table;
 
     pub fn cols(self: Query, sql: []const u8) Query {
-        return self.append(.cols, sql, .{});
+        return self.append(.cols, sql, .none);
     }
 
     pub fn values(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append(.VALUES, sql, args);
+        return self.append(.VALUES, sql, .fromFields(args, self.db));
     }
 
     pub fn onConflict(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append(.@"ON CONFLICT", sql, args);
+        return self.append(.@"ON CONFLICT", sql, .from(args, self.db));
     }
 
     pub fn update(self: Query) Query {
@@ -85,7 +85,7 @@ pub const Query = struct {
     }
 
     pub fn set(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append(.SET, sql, args);
+        return self.append(.SET, sql, .from(args, self.db));
     }
 
     pub fn setAll(self: Query, data: anytype) Query {
@@ -93,7 +93,7 @@ pub const Query = struct {
             return self;
         }
 
-        return self.append(.SET, util.setters(@TypeOf(data)), data);
+        return self.append(.SET, util.setters(@TypeOf(data)), .fromFields(data, self.db));
     }
 
     pub fn delete(self: Query) Query {
@@ -109,43 +109,43 @@ pub const Query = struct {
     pub const from = table;
 
     pub fn join(self: Query, sql: []const u8) Query {
-        return self.append(.JOIN, sql, .{});
+        return self.append(.JOIN, sql, .none);
     }
 
     pub fn leftJoin(self: Query, sql: []const u8) Query {
-        return self.append(.@"LEFT JOIN", sql, .{});
+        return self.append(.@"LEFT JOIN", sql, .none);
     }
 
     pub fn where(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append(if (self.parts.where == null) .WHERE else .AND, sql, args);
+        return self.append(if (self.parts.where == null) .WHERE else .AND, sql, .from(args, self.db));
     }
 
     pub fn orWhere(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append(if (self.parts.where == null) .WHERE else .OR, sql, args);
+        return self.append(if (self.parts.where == null) .WHERE else .OR, sql, .from(args, self.db));
     }
 
     pub fn groupBy(self: Query, sql: []const u8) Query {
-        return self.append(.@"GROUP BY", sql, .{});
+        return self.append(.@"GROUP BY", sql, .none);
     }
 
     pub fn having(self: Query, sql: []const u8, args: anytype) Query {
-        return self.append(.HAVING, sql, args);
+        return self.append(.HAVING, sql, .from(args, self.db));
     }
 
     pub fn orderBy(self: Query, sql: []const u8) Query {
-        return self.append(.@"ORDER BY", sql, .{});
+        return self.append(.@"ORDER BY", sql, .none);
     }
 
     pub fn limit(self: Query, n: i32) Query {
-        return self.append(.raw, " LIMIT ?", .{n});
+        return self.append(.raw, " LIMIT ?", .{ .one = .{ .int = @intCast(n) } });
     }
 
     pub fn offset(self: Query, i: i32) Query {
-        return self.append(.raw, " OFFSET ?", .{i});
+        return self.append(.raw, " OFFSET ?", .{ .one = .{ .int = @intCast(i) } });
     }
 
     pub fn returning(self: Query, sql: []const u8) Query {
-        return self.append(.RETURNING, sql, .{});
+        return self.append(.RETURNING, sql, .none);
     }
 
     pub fn exec(self: Query) !void {
@@ -231,7 +231,7 @@ pub const Query = struct {
         var buf = try SqlBuf.init(self.db.arena);
         try buf.append(self);
 
-        var stmt = try self.db.prepare(buf.buf.items, .{});
+        var stmt = try self.db.conn.prepare(buf.buf.items);
         errdefer stmt.deinit();
 
         var i: usize = 0;
@@ -243,9 +243,9 @@ pub const Query = struct {
         return stmt;
     }
 
-    pub fn append(self: Query, kind: Part.Kind, sql: []const u8, args: anytype) Query {
+    pub fn append(self: Query, kind: Part.Kind, sql: []const u8, args: Args) Query {
         const part = self.db.arena.create(Part) catch @panic("OOM");
-        part.* = .{ .prev = self.slot(kind).*, .kind = kind, .sql = sql, .args = toArgs(self.db, args) };
+        part.* = .{ .prev = self.slot(kind).*, .kind = kind, .sql = sql, .args = args };
         return self.replace(part);
     }
 
@@ -268,34 +268,32 @@ pub const Query = struct {
             else => &self.parts.tail,
         };
     }
-
-    fn toArgs(db: *Session, args: anytype) Args {
-        const fields = @typeInfo(@TypeOf(args)).@"struct".fields;
-
-        return switch (fields.len) {
-            0 => .empty,
-            1 => .{ .one = Value.from(@field(args, fields[0].name), db.arena) catch @panic("OOM") },
-            else => {
-                const res = db.arena.alloc(Value, fields.len) catch @panic("OOM");
-
-                inline for (fields, 0..) |f, i| {
-                    res[i] = Value.from(@field(args, f.name), db.arena) catch @panic("OOM");
-                }
-
-                return .{ .many = res };
-            },
-        };
-    }
 };
 
 const Args = union(enum) {
-    empty,
+    none,
     one: Value,
     many: []const Value,
 
+    fn from(args: anytype, db: *Session) Args {
+        if (comptime @TypeOf(args) == Args) return args;
+        if (comptime @TypeOf(args) == void) return .none;
+        if (comptime util.isTuple(@TypeOf(args))) return fromFields(args, db);
+
+        return .{ .one = Value.from(args, db.arena) catch @panic("OOM") };
+    }
+
+    fn fromFields(args: anytype, db: *Session) Args {
+        const fields = std.meta.fields(@TypeOf(args));
+        const res = db.arena.alloc(Value, fields.len) catch @panic("OOM");
+        inline for (fields, 0..) |f, i| res[i] = Value.from(@field(args, f.name), db.arena) catch @panic("OOM");
+
+        return .{ .many = res };
+    }
+
     fn bind(self: Args, stmt: anytype, i: *usize) !void {
         switch (self) {
-            .empty => {},
+            .none => {},
             .one => |arg| try arg.bind(stmt, i),
             .many => |args| for (args) |arg| try arg.bind(stmt, i),
         }
@@ -333,7 +331,7 @@ test "update" {
 
     try expectSql(update, "UPDATE");
     try expectSql(update.table("Person"), "UPDATE Person");
-    try expectSql(update.table("Person").set("age = ?", .{18}), "UPDATE Person SET age = ?");
+    try expectSql(update.table("Person").set("age = ?", 18), "UPDATE Person SET age = ?");
 }
 
 test "delete" {
@@ -343,15 +341,15 @@ test "delete" {
 
     try expectSql(delete, "DELETE");
     try expectSql(delete.from("Person"), "DELETE FROM Person");
-    try expectSql(delete.from("Person").where("age < ?", .{18}), "DELETE FROM Person WHERE age < ?");
+    try expectSql(delete.from("Person").where("age < ?", 18), "DELETE FROM Person WHERE age < ?");
 }
 
 test "raw" {
     var db = try fakeDb();
     defer db.deinit();
-    const raw = db.raw("SELECT DISTINCT name", .{});
+    const raw = db.raw("SELECT DISTINCT name", {});
 
     try expectSql(raw, "SELECT DISTINCT name");
     try expectSql(raw.from("Person"), "SELECT DISTINCT name FROM Person");
-    try expectSql(raw.from("Person").where("age > ?", .{18}), "SELECT DISTINCT name FROM Person WHERE age > ?");
+    try expectSql(raw.from("Person").where("age > ?", 18), "SELECT DISTINCT name FROM Person WHERE age > ?");
 }
