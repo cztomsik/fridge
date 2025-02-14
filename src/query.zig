@@ -62,7 +62,7 @@ pub fn Query(comptime T: type) type {
         }
 
         pub fn get(self: Q, comptime col: Col) !?@FieldType(T, @tagName(col)) {
-            return self.select(col).get(@FieldType(T, @tagName(col)));
+            return self.select(@tagName(col)).get(@FieldType(T, @tagName(col)));
         }
 
         pub fn exists(self: Q) !bool {
