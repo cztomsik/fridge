@@ -166,6 +166,14 @@ pub const Query = struct {
         return null;
     }
 
+    pub fn exists(self: Query) !bool {
+        return try self.select("1").get(bool) orelse false;
+    }
+
+    pub fn count(self: Query, comptime col: []const u8) !u64 {
+        return (try self.select("COUNT(" ++ col ++ ")").get(u64)).?;
+    }
+
     pub fn pluck(self: Query, comptime R: type) ![]const R {
         var stmt = try self.prepare();
         defer stmt.deinit();
