@@ -25,7 +25,7 @@ pub fn Query(comptime T: type) type {
             return .{ .raw = self.raw.join(sql) };
         }
 
-        pub fn where(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) Q {
+        pub fn where(self: Q, comptime col: Col, val: @FieldType(T, @tagName(col))) Q {
             return self.whereRaw(@tagName(col) ++ " = ?", .{val});
         }
 
@@ -33,7 +33,7 @@ pub fn Query(comptime T: type) type {
             return .{ .raw = self.raw.where(sql, args) };
         }
 
-        pub fn orWhere(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) Q {
+        pub fn orWhere(self: Q, comptime col: Col, val: @FieldType(T, @tagName(col))) Q {
             return self.orWhereRaw(@tagName(col) ++ " = ?", .{val});
         }
 
@@ -61,35 +61,35 @@ pub fn Query(comptime T: type) type {
             return .{ .raw = self.raw.offset(i) };
         }
 
-        pub fn get(self: Q, comptime col: Col) !?std.meta.FieldType(T, col) {
-            return self.select(@tagName(col)).get(std.meta.FieldType(T, col));
+        pub fn get(self: Q, comptime col: Col) !?@FieldType(T, @tagName(col)) {
+            return self.select(col).get(@FieldType(T, @tagName(col)));
         }
 
         pub fn exists(self: Q) !bool {
-            return try self.select("1").get(bool) orelse false;
+            return self.raw.exists();
         }
 
         pub fn count(self: Q, comptime col: Col) !u64 {
-            return (try self.select("COUNT(" ++ @tagName(col) ++ ")").get(u64)).?;
+            return self.raw.count(@tagName(col));
         }
 
-        pub fn min(self: Q, comptime col: Col) !?std.meta.FieldType(T, col) {
-            return self.select("MIN(" ++ @tagName(col) ++ ")").get(std.meta.FieldType(T, col));
+        pub fn min(self: Q, comptime col: Col) !?@FieldType(T, @tagName(col)) {
+            return self.select("MIN(" ++ @tagName(col) ++ ")").get(@FieldType(T, @tagName(col)));
         }
 
-        pub fn max(self: Q, comptime col: Col) !?std.meta.FieldType(T, col) {
-            return self.select("MAX(" ++ @tagName(col) ++ ")").get(std.meta.FieldType(T, col));
+        pub fn max(self: Q, comptime col: Col) !?@FieldType(T, @tagName(col)) {
+            return self.select("MAX(" ++ @tagName(col) ++ ")").get(@FieldType(T, @tagName(col)));
         }
 
-        pub fn avg(self: Q, comptime col: Col) !?std.meta.FieldType(T, col) {
-            return self.select("AVG(" ++ @tagName(col) ++ ")").get(std.meta.FieldType(T, col));
+        pub fn avg(self: Q, comptime col: Col) !?@FieldType(T, @tagName(col)) {
+            return self.select("AVG(" ++ @tagName(col) ++ ")").get(@FieldType(T, @tagName(col)));
         }
 
-        pub fn find(self: Q, id: std.meta.FieldType(T, .id)) !?T {
+        pub fn find(self: Q, id: util.Id(T)) !?T {
             return self.findBy(.id, id);
         }
 
-        pub fn findBy(self: Q, comptime col: Col, val: std.meta.FieldType(T, col)) !?T {
+        pub fn findBy(self: Q, comptime col: Col, val: @FieldType(T, @tagName(col))) !?T {
             return self.where(col, val).findFirst();
         }
 
@@ -105,8 +105,8 @@ pub fn Query(comptime T: type) type {
             return self.raw.select(sql);
         }
 
-        pub fn pluck(self: Q, comptime col: Col) ![]const std.meta.FieldType(T, col) {
-            return self.select(@tagName(col)).pluck(std.meta.FieldType(T, col));
+        pub fn pluck(self: Q, comptime col: Col) ![]const @FieldType(T, @tagName(col)) {
+            return self.select(@tagName(col)).pluck(@FieldType(T, @tagName(col)));
         }
 
         pub fn groupBy(self: Q, sql: []const u8) RawQuery {
