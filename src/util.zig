@@ -11,8 +11,13 @@ pub const log = if (builtin.is_test) struct { // zig build test captures stderr 
     }
 } else std.log.scoped(.fridge);
 
+// TODO: if we ever want to remap fields, this is the place
+pub fn ColType(comptime T: type, comptime field_name: []const u8) type {
+    return @FieldType(T, field_name);
+}
+
 pub fn Id(comptime T: type) type {
-    const Col = std.meta.FieldType(T, .id);
+    const Col = ColType(T, "id");
 
     return switch (@typeInfo(Col)) {
         .optional => |o| o.child,

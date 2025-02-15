@@ -25,7 +25,7 @@ pub fn Query(comptime T: type) type {
             return .{ .raw = self.raw.join(sql) };
         }
 
-        pub fn where(self: Q, comptime col: Col, val: @FieldType(T, @tagName(col))) Q {
+        pub fn where(self: Q, comptime col: Col, val: util.ColType(T, @tagName(col))) Q {
             return self.whereRaw(@tagName(col) ++ " = ?", val);
         }
 
@@ -33,7 +33,7 @@ pub fn Query(comptime T: type) type {
             return .{ .raw = self.raw.where(sql, args) };
         }
 
-        pub fn orWhere(self: Q, comptime col: Col, val: @FieldType(T, @tagName(col))) Q {
+        pub fn orWhere(self: Q, comptime col: Col, val: util.ColType(T, @tagName(col))) Q {
             return self.orWhereRaw(@tagName(col) ++ " = ?", val);
         }
 
@@ -61,8 +61,8 @@ pub fn Query(comptime T: type) type {
             return .{ .raw = self.raw.offset(i) };
         }
 
-        pub fn get(self: Q, comptime col: Col) !?@FieldType(T, @tagName(col)) {
-            return self.select(@tagName(col)).get(@FieldType(T, @tagName(col)));
+        pub fn get(self: Q, comptime col: Col) !?util.ColType(T, @tagName(col)) {
+            return self.select(@tagName(col)).get(util.ColType(T, @tagName(col)));
         }
 
         pub fn exists(self: Q) !bool {
@@ -73,23 +73,23 @@ pub fn Query(comptime T: type) type {
             return self.raw.count(@tagName(col));
         }
 
-        pub fn min(self: Q, comptime col: Col) !?@FieldType(T, @tagName(col)) {
-            return self.select("MIN(" ++ @tagName(col) ++ ")").get(@FieldType(T, @tagName(col)));
+        pub fn min(self: Q, comptime col: Col) !?util.ColType(T, @tagName(col)) {
+            return self.select("MIN(" ++ @tagName(col) ++ ")").get(util.ColType(T, @tagName(col)));
         }
 
-        pub fn max(self: Q, comptime col: Col) !?@FieldType(T, @tagName(col)) {
-            return self.select("MAX(" ++ @tagName(col) ++ ")").get(@FieldType(T, @tagName(col)));
+        pub fn max(self: Q, comptime col: Col) !?util.ColType(T, @tagName(col)) {
+            return self.select("MAX(" ++ @tagName(col) ++ ")").get(util.ColType(T, @tagName(col)));
         }
 
-        pub fn avg(self: Q, comptime col: Col) !?@FieldType(T, @tagName(col)) {
-            return self.select("AVG(" ++ @tagName(col) ++ ")").get(@FieldType(T, @tagName(col)));
+        pub fn avg(self: Q, comptime col: Col) !?util.ColType(T, @tagName(col)) {
+            return self.select("AVG(" ++ @tagName(col) ++ ")").get(util.ColType(T, @tagName(col)));
         }
 
         pub fn find(self: Q, id: util.Id(T)) !?T {
             return self.findBy(.id, id);
         }
 
-        pub fn findBy(self: Q, comptime col: Col, val: @FieldType(T, @tagName(col))) !?T {
+        pub fn findBy(self: Q, comptime col: Col, val: util.ColType(T, @tagName(col))) !?T {
             return self.where(col, val).findFirst();
         }
 
@@ -105,8 +105,8 @@ pub fn Query(comptime T: type) type {
             return self.raw.select(sql);
         }
 
-        pub fn pluck(self: Q, comptime col: Col) ![]const @FieldType(T, @tagName(col)) {
-            return self.select(@tagName(col)).pluck(@FieldType(T, @tagName(col)));
+        pub fn pluck(self: Q, comptime col: Col) ![]const util.ColType(T, @tagName(col)) {
+            return self.select(@tagName(col)).pluck(util.ColType(T, @tagName(col)));
         }
 
         pub fn groupBy(self: Q, sql: []const u8) RawQuery {
@@ -140,7 +140,7 @@ pub fn Query(comptime T: type) type {
 }
 
 const Person = struct {
-    id: u32,
+    id: ?u32 = null,
     name: []const u8,
     age: u8,
 };
