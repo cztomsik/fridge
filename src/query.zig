@@ -33,12 +33,28 @@ pub fn Query(comptime T: type) type {
             return .{ .raw = self.raw.where(sql, args) };
         }
 
+        pub fn ifWhere(self: Q, cond: bool, comptime col: Col, val: util.ColType(T, @tagName(col))) Q {
+            return if (cond) self.where(col, val) else self;
+        }
+
+        pub fn maybeWhere(self: Q, comptime col: Col, val: util.MaybeColType(T, @tagName(col))) Q {
+            return if (val) |v| self.where(col, v) else self;
+        }
+
         pub fn orWhere(self: Q, comptime col: Col, val: util.ColType(T, @tagName(col))) Q {
             return self.orWhereRaw(@tagName(col) ++ " = ?", val);
         }
 
         pub fn orWhereRaw(self: Q, sql: []const u8, args: anytype) Q {
             return .{ .raw = self.raw.orWhere(sql, args) };
+        }
+
+        pub fn orIfWhere(self: Q, cond: bool, comptime col: Col, val: util.ColType(T, @tagName(col))) Q {
+            return if (cond) self.orWhere(col, val) else self;
+        }
+
+        pub fn orMaybeWhere(self: Q, comptime col: Col, val: util.MaybeColType(T, @tagName(col))) Q {
+            return if (val) |v| self.orWhere(col, v) else self;
         }
 
         pub fn orderBy(self: Q, col: Col, ord: enum { asc, desc }) Q {
@@ -206,6 +222,32 @@ test "query.where()" {
         db.query(Person).whereRaw("name = ?", "Alice").whereRaw("age > ?", 20),
         "SELECT id, name, age FROM Person WHERE name = ? AND age > ?",
     );
+
+    try expectSql(
+        db.query(Person).ifWhere(false, .name, "Alice"),
+        "SELECT id, name, age FROM Person",
+    );
+
+    try expectSql(
+        db.query(Person).ifWhere(true, .name, "Alice"),
+        "SELECT id, name, age FROM Person WHERE name = ?",
+    );
+
+    try expectSql(
+        db.query(Person).maybeWhere(.name, null),
+        "SELECT id, name, age FROM Person",
+    );
+
+    try expectSql(
+        // Check that arg type is "flat" optional even for opt columns
+        db.query(Person).maybeWhere(.id, @as(?u32, null)),
+        "SELECT id, name, age FROM Person",
+    );
+
+    try expectSql(
+        db.query(Person).maybeWhere(.name, "Alice"),
+        "SELECT id, name, age FROM Person WHERE name = ?",
+    );
 }
 
 test "query.orWhere()" {
@@ -225,6 +267,26 @@ test "query.orWhere()" {
     try expectSql(
         db.query(Person).whereRaw("name = ?", "Alice").orWhereRaw("age > ?", 20),
         "SELECT id, name, age FROM Person WHERE name = ? OR age > ?",
+    );
+
+    try expectSql(
+        db.query(Person).where(.name, "Alice").orIfWhere(false, .age, 20),
+        "SELECT id, name, age FROM Person WHERE name = ?",
+    );
+
+    try expectSql(
+        db.query(Person).where(.name, "Alice").orIfWhere(true, .age, 20),
+        "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
+    );
+
+    try expectSql(
+        db.query(Person).where(.name, "Alice").orMaybeWhere(.age, null),
+        "SELECT id, name, age FROM Person WHERE name = ?",
+    );
+
+    try expectSql(
+        db.query(Person).where(.name, "Alice").orMaybeWhere(.age, 20),
+        "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
     );
 }
 

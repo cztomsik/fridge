@@ -16,6 +16,15 @@ pub fn ColType(comptime T: type, comptime field_name: []const u8) type {
     return @FieldType(T, field_name);
 }
 
+pub fn MaybeColType(comptime T: type, comptime field_name: []const u8) type {
+    const Col = ColType(T, field_name);
+
+    return switch (@typeInfo(Col)) {
+        .optional => Col,
+        else => ?Col,
+    };
+}
+
 pub fn Id(comptime T: type) type {
     const Col = ColType(T, "id");
 
