@@ -101,8 +101,12 @@ pub const Query = struct {
     }
 
     pub fn select(self: Query, sql: []const u8) Query {
+        return self.selectRaw(sql, {});
+    }
+
+    pub fn selectRaw(self: Query, sql: []const u8, args: anytype) Query {
         const part = self.db.arena.create(Part) catch @panic("OOM");
-        part.* = .{ .kind = .SELECT, .sql = sql };
+        part.* = .{ .kind = .SELECT, .sql = sql, .args = .from(args, self.db) };
         return self.replace(part);
     }
 
@@ -310,6 +314,7 @@ test "select" {
 
     try expectSql(select1, "SELECT 1");
     try expectSql(select1.select("2"), "SELECT 2");
+    try expectSql(select1.selectRaw("?", 1), "SELECT ?");
 }
 
 test "insert" {
