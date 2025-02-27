@@ -156,9 +156,11 @@ test "db.query(T).xxx() value methods" {
     var q = db.query(Person);
 
     try t.expectEqual(true, q.exists());
+    try t.expectEqual(false, q.where(.id, 3).exists());
     try t.expectEqual(2, q.count(.id));
     try t.expectEqual(1, q.min(.id));
     try t.expectEqual(2, q.max(.id));
+    try t.expectEqual(null, q.where(.id, 3).max(.id));
     try t.expectEqualSlices(u32, &.{ 1, 2 }, try q.pluck(.id));
 }
 

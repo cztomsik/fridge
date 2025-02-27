@@ -163,11 +163,7 @@ pub const Query = struct {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        if (try stmt.next(struct { T }, self.db.arena)) |row| {
-            return row[0];
-        }
-
-        return null;
+        return if (try stmt.next(?T, self.db.arena)) |v| v else null;
     }
 
     pub fn exists(self: Query) !bool {

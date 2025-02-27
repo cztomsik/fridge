@@ -50,7 +50,7 @@ pub const Statement = extern struct {
             },
             else => {
                 const val = try self.column(0);
-                res = val.into(R, arena);
+                res = try val.into(R, arena);
             },
         }
 
