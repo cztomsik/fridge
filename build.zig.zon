@@ -1,5 +1,6 @@
 .{
-    .name = "fridge",
+    .name = .fridge,
+    .fingerprint = 0xf2e94d898a886cdc,
     .version = "0.9.5",
 
     .paths = .{
