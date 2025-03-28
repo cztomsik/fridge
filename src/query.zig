@@ -25,35 +25,35 @@ pub fn Query(comptime T: type) type {
             return .{ .raw = self.raw.join(sql) };
         }
 
-        pub fn where(self: Q, comptime col: Col, val: util.ColType(T, @tagName(col))) Q {
-            return self.whereRaw(@tagName(col) ++ " = ?", val);
+        pub fn where(self: Q, comptime col: []const u8, val: util.ColType(T, col)) Q {
+            return self.whereRaw(col ++ " = ?", val);
         }
 
         pub fn whereRaw(self: Q, sql: []const u8, args: anytype) Q {
             return .{ .raw = self.raw.where(sql, args) };
         }
 
-        pub fn ifWhere(self: Q, cond: bool, comptime col: Col, val: util.ColType(T, @tagName(col))) Q {
+        pub fn ifWhere(self: Q, cond: bool, comptime col: []const u8, val: util.ColType(T, col)) Q {
             return if (cond) self.where(col, val) else self;
         }
 
-        pub fn maybeWhere(self: Q, comptime col: Col, val: util.MaybeColType(T, @tagName(col))) Q {
+        pub fn maybeWhere(self: Q, comptime col: []const u8, val: util.MaybeColType(T, col)) Q {
             return if (val) |v| self.where(col, v) else self;
         }
 
-        pub fn orWhere(self: Q, comptime col: Col, val: util.ColType(T, @tagName(col))) Q {
-            return self.orWhereRaw(@tagName(col) ++ " = ?", val);
+        pub fn orWhere(self: Q, comptime col: []const u8, val: util.ColType(T, col)) Q {
+            return self.orWhereRaw(col ++ " = ?", val);
         }
 
         pub fn orWhereRaw(self: Q, sql: []const u8, args: anytype) Q {
             return .{ .raw = self.raw.orWhere(sql, args) };
         }
 
-        pub fn orIfWhere(self: Q, cond: bool, comptime col: Col, val: util.ColType(T, @tagName(col))) Q {
+        pub fn orIfWhere(self: Q, cond: bool, comptime col: []const u8, val: util.ColType(T, col)) Q {
             return if (cond) self.orWhere(col, val) else self;
         }
 
-        pub fn orMaybeWhere(self: Q, comptime col: Col, val: util.MaybeColType(T, @tagName(col))) Q {
+        pub fn orMaybeWhere(self: Q, comptime col: []const u8, val: util.MaybeColType(T, col)) Q {
             return if (val) |v| self.orWhere(col, v) else self;
         }
 
@@ -77,35 +77,35 @@ pub fn Query(comptime T: type) type {
             return .{ .raw = self.raw.offset(i) };
         }
 
-        pub fn get(self: Q, comptime col: Col) !?util.ColType(T, @tagName(col)) {
-            return self.select(@tagName(col)).get(util.ColType(T, @tagName(col)));
+        pub fn get(self: Q, comptime col: []const u8) !?util.ColType(T, col) {
+            return self.select(col).get(util.ColType(T, col));
         }
 
         pub fn exists(self: Q) !bool {
             return self.raw.exists();
         }
 
-        pub fn count(self: Q, comptime col: Col) !u64 {
-            return self.raw.count(@tagName(col));
+        pub fn count(self: Q, comptime col: []const u8) !u64 {
+            return self.raw.count(col);
         }
 
-        pub fn min(self: Q, comptime col: Col) !?util.ColType(T, @tagName(col)) {
-            return self.select("MIN(" ++ @tagName(col) ++ ")").get(util.ColType(T, @tagName(col)));
+        pub fn min(self: Q, comptime col: []const u8) !?util.ColType(T, col) {
+            return self.select("MIN(" ++ col ++ ")").get(util.ColType(T, col));
         }
 
-        pub fn max(self: Q, comptime col: Col) !?util.ColType(T, @tagName(col)) {
-            return self.select("MAX(" ++ @tagName(col) ++ ")").get(util.ColType(T, @tagName(col)));
+        pub fn max(self: Q, comptime col: []const u8) !?util.ColType(T, col) {
+            return self.select("MAX(" ++ col ++ ")").get(util.ColType(T, col));
         }
 
-        pub fn avg(self: Q, comptime col: Col) !?util.ColType(T, @tagName(col)) {
-            return self.select("AVG(" ++ @tagName(col) ++ ")").get(util.ColType(T, @tagName(col)));
+        pub fn avg(self: Q, comptime col: []const u8) !?util.ColType(T, col) {
+            return self.select("AVG(" ++ col ++ ")").get(util.ColType(T, col));
         }
 
         pub fn find(self: Q, id: util.Id(T)) !?T {
-            return self.findBy(.id, id);
+            return self.findBy("id", id);
         }
 
-        pub fn findBy(self: Q, comptime col: Col, val: util.ColType(T, @tagName(col))) !?T {
+        pub fn findBy(self: Q, comptime col: []const u8, val: util.ColType(T, col)) !?T {
             return self.where(col, val).findFirst();
         }
 
@@ -121,8 +121,8 @@ pub fn Query(comptime T: type) type {
             return self.raw.select(sql);
         }
 
-        pub fn pluck(self: Q, comptime col: Col) ![]const util.ColType(T, @tagName(col)) {
-            return self.select(@tagName(col)).pluck(util.ColType(T, @tagName(col)));
+        pub fn pluck(self: Q, comptime col: []const u8) ![]const util.ColType(T, col) {
+            return self.select(col).pluck(util.ColType(T, col));
         }
 
         pub fn groupBy(self: Q, sql: []const u8) RawQuery {
@@ -209,12 +209,12 @@ test "query.where()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).where(.name, "Alice"),
+        db.query(Person).where("name", "Alice"),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.name, "Alice").where(.age, 20),
+        db.query(Person).where("name", "Alice").where("age", 20),
         "SELECT id, name, age FROM Person WHERE name = ? AND age = ?",
     );
 
@@ -224,28 +224,28 @@ test "query.where()" {
     );
 
     try expectSql(
-        db.query(Person).ifWhere(false, .name, "Alice"),
+        db.query(Person).ifWhere(false, "name", "Alice"),
         "SELECT id, name, age FROM Person",
     );
 
     try expectSql(
-        db.query(Person).ifWhere(true, .name, "Alice"),
+        db.query(Person).ifWhere(true, "name", "Alice"),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).maybeWhere(.name, null),
+        db.query(Person).maybeWhere("name", null),
         "SELECT id, name, age FROM Person",
     );
 
     try expectSql(
         // Check that arg type is "flat" optional even for opt columns
-        db.query(Person).maybeWhere(.id, @as(?u32, null)),
+        db.query(Person).maybeWhere("id", @as(?u32, null)),
         "SELECT id, name, age FROM Person",
     );
 
     try expectSql(
-        db.query(Person).maybeWhere(.name, "Alice"),
+        db.query(Person).maybeWhere("name", "Alice"),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 }
@@ -255,12 +255,12 @@ test "query.orWhere()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).orWhere(.name, "Alice"),
+        db.query(Person).orWhere("name", "Alice"),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.name, "Alice").orWhere(.age, 20),
+        db.query(Person).where("name", "Alice").orWhere("age", 20),
         "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
     );
 
@@ -270,22 +270,22 @@ test "query.orWhere()" {
     );
 
     try expectSql(
-        db.query(Person).where(.name, "Alice").orIfWhere(false, .age, 20),
+        db.query(Person).where("name", "Alice").orIfWhere(false, "age", 20),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.name, "Alice").orIfWhere(true, .age, 20),
+        db.query(Person).where("name", "Alice").orIfWhere(true, "age", 20),
         "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.name, "Alice").orMaybeWhere(.age, null),
+        db.query(Person).where("name", "Alice").orMaybeWhere("age", null),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.name, "Alice").orMaybeWhere(.age, 20),
+        db.query(Person).where("name", "Alice").orMaybeWhere("age", 20),
         "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
     );
 }
@@ -371,17 +371,17 @@ test "query.update()" {
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).update(.{ .name = "Alice" }),
+        db.query(Person).where("age", 20).update(.{ .name = "Alice" }),
         "UPDATE Person SET name = ? WHERE age = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).orWhere(.name, "Bob").update(.{ .name = "Alice" }),
+        db.query(Person).where("age", 20).orWhere("name", "Bob").update(.{ .name = "Alice" }),
         "UPDATE Person SET name = ? WHERE age = ? OR name = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).update(.{ .name = "Alice", .age = 21 }),
+        db.query(Person).where("age", 20).update(.{ .name = "Alice", .age = 21 }),
         "UPDATE Person SET name = ?, age = ? WHERE age = ?",
     );
 
@@ -406,12 +406,12 @@ test "query.delete()" {
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).delete(),
+        db.query(Person).where("age", 20).delete(),
         "DELETE FROM Person WHERE age = ?",
     );
 
     try expectSql(
-        db.query(Person).where(.age, 20).orWhere(.name, "Bob").delete(),
+        db.query(Person).where("age", 20).orWhere("name", "Bob").delete(),
         "DELETE FROM Person WHERE age = ? OR name = ?",
     );
 }

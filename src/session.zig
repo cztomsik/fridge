@@ -98,12 +98,12 @@ pub const Session = struct {
 
     /// Update a record by its primary key.
     pub fn update(self: *Session, comptime T: type, id: util.Id(T), data: anytype) !void {
-        return self.query(T).where(.id, id).update(data).exec();
+        return self.query(T).where("id", id).update(data).exec();
     }
 
     /// Delete a record by its primary key.
     pub fn delete(self: *Session, comptime T: type, id: util.Id(T)) !void {
-        try self.query(T).where(.id, id).delete().exec();
+        try self.query(T).where("id", id).delete().exec();
     }
 };
 
@@ -156,12 +156,12 @@ test "db.query(T).xxx() value methods" {
     var q = db.query(Person);
 
     try t.expectEqual(true, q.exists());
-    try t.expectEqual(false, q.where(.id, 3).exists());
-    try t.expectEqual(2, q.count(.id));
-    try t.expectEqual(1, q.min(.id));
-    try t.expectEqual(2, q.max(.id));
-    try t.expectEqual(null, q.where(.id, 3).max(.id));
-    try t.expectEqualSlices(u32, &.{ 1, 2 }, try q.pluck(.id));
+    try t.expectEqual(false, q.where("id", 3).exists());
+    try t.expectEqual(2, q.count("id"));
+    try t.expectEqual(1, q.min("id"));
+    try t.expectEqual(2, q.max("id"));
+    try t.expectEqual(null, q.where("id", 3).max("id"));
+    try t.expectEqualSlices(u32, &.{ 1, 2 }, try q.pluck("id"));
 }
 
 test "db.query(T).findAll()" {

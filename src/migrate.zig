@@ -40,7 +40,7 @@ pub fn migrate(allocator: std.mem.Allocator, filename: [:0]const u8, ddl: []cons
 fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
     for (try sqlite_master.objects(pristine, kind)) |obj| {
         // Check if object exists
-        const curr = try db.query(sqlite_master).where(.type, kind).findBy(.name, obj.name) orelse {
+        const curr = try db.query(sqlite_master).where("type", kind).findBy("name", obj.name) orelse {
             logObject(obj, .create);
             try db.conn.execAll(obj.sql);
             continue;
@@ -91,7 +91,7 @@ fn migrateObjects(db: *Session, pristine: *Session, kind: []const u8) !void {
     // Now we can check for extraneous objects and drop them
 
     for (try sqlite_master.objects(db, kind)) |obj| {
-        if (try pristine.query(sqlite_master).where(.type, kind).findBy(.name, obj.name) == null) {
+        if (try pristine.query(sqlite_master).where("type", kind).findBy("name", obj.name) == null) {
             logObject(obj, .drop);
 
             const drop_sql = try std.fmt.allocPrint(db.arena, "DROP {s} {s}", .{ kind, obj.name });
@@ -111,7 +111,7 @@ const sqlite_master = struct {
 
     fn objects(db: *Session, kind: []const u8) ![]const sqlite_master {
         return db.query(sqlite_master)
-            .where(.type, kind)
+            .where("type", kind)
             .whereRaw("name NOT LIKE ?", .{"sqlite_%"})
             .findAll();
     }
