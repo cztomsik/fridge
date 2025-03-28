@@ -26,7 +26,7 @@ pub fn Query(comptime T: type) type {
         }
 
         pub fn where(self: Q, comptime col: []const u8, val: util.ColType(T, col)) Q {
-            return self.whereRaw(col ++ " = ?", val);
+            return self.whereRaw(if (@hasField(T, col)) col ++ " = ?" else col, val);
         }
 
         pub fn whereRaw(self: Q, sql: []const u8, args: anytype) Q {
@@ -42,7 +42,7 @@ pub fn Query(comptime T: type) type {
         }
 
         pub fn orWhere(self: Q, comptime col: []const u8, val: util.ColType(T, col)) Q {
-            return self.orWhereRaw(col ++ " = ?", val);
+            return self.orWhereRaw(if (@hasField(T, col)) col ++ " = ?" else col, val);
         }
 
         pub fn orWhereRaw(self: Q, sql: []const u8, args: anytype) Q {
@@ -214,6 +214,11 @@ test "query.where()" {
     );
 
     try expectSql(
+        db.query(Person).where("age > ?", 18),
+        "SELECT id, name, age FROM Person WHERE age > ?",
+    );
+
+    try expectSql(
         db.query(Person).where("name", "Alice").where("age", 20),
         "SELECT id, name, age FROM Person WHERE name = ? AND age = ?",
     );
@@ -257,6 +262,11 @@ test "query.orWhere()" {
     try expectSql(
         db.query(Person).orWhere("name", "Alice"),
         "SELECT id, name, age FROM Person WHERE name = ?",
+    );
+
+    try expectSql(
+        db.query(Person).orWhere("age > ?", 18),
+        "SELECT id, name, age FROM Person WHERE age > ?",
     );
 
     try expectSql(

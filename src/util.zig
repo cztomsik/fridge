@@ -12,8 +12,25 @@ pub const log = if (builtin.is_test) struct { // zig build test captures stderr 
 } else std.log.scoped(.fridge);
 
 // TODO: if we ever want to remap fields, this is the place
-pub fn ColType(comptime T: type, comptime field_name: []const u8) type {
-    return @FieldType(T, field_name);
+pub fn ColType(comptime T: type, comptime expr: []const u8) type {
+    if (@hasField(T, expr)) {
+        return @FieldType(T, expr);
+    }
+
+    const inferable =
+        expr[expr.len - 1] == '?' and
+        std.mem.indexOfScalar(u8, expr, '(') == null and
+        std.mem.indexOf(u8, expr, "->") == null and
+        std.mem.indexOf(u8, expr, "AND") == null and
+        std.mem.indexOf(u8, expr, "OR") == null;
+
+    if (inferable) {
+        if (std.mem.indexOfScalar(u8, expr, ' ')) |i| {
+            return @FieldType(T, expr[0..i]);
+        }
+    }
+
+    @compileError("Cannot infer arg type " ++ expr ++ "; You might need to use the xxxRaw() counterpart");
 }
 
 pub fn MaybeColType(comptime T: type, comptime field_name: []const u8) type {
