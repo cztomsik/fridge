@@ -7,7 +7,7 @@ more.
 ## Features
 
 - [x] Supports both bundling SQLite3 with your app or linking system SQLite3.
-- [x] Type-safe query builder.
+- [x] Type-safe + raw query builder.
 - [x] Connection pool.
 - [x] Shortcuts for common tasks.
 - [x] **Migrations** inspired by [David Röthlisberger](https://david.rothlis.net/declarative-schema-migration-for-sqlite/).
@@ -114,12 +114,50 @@ for (try db.query(User).findAll()) |user| {
 Of course, you can also use `where()` to filter the results:
 
 ```zig
-for (try db.query(User).where(.role, "admin").findAll()) |user| {
+for (try db.query(User).where("role", "admin").findAll()) |user| {
     std.log.debug("Admin: {}", .{user});
 }
 ```
 
 Notably, the `.where()` method is type-safe and will only accept types compatible with the column type.
+
+### Type-safe Query Builder
+
+The type-safe query builder provides methods that are aware of your struct's fields:
+
+```zig
+// Find all users with role "admin", ordered by name
+const admins = try db.query(User)
+    .where("role", "admin")
+    .orderBy(.name, .asc)
+    .findAll();
+
+// Count users by role
+const n_admins = try db.query(User)
+    .where("role", "admin")
+    .count("id");
+
+// Find users with optional filters
+const users = try db.query(User)
+    .maybeWhere("role", filter.role) // only applies if filter.role is not null
+    .ifWhere(cond, "age", filter.age) // only applies if cond is true
+    .findAll();
+```
+
+### Raw Query Builder
+
+For more complex queries:
+
+```zig
+const users = try db.raw("SELECT * FROM User")
+    .where("role = ?", "admin")
+    .fetchAll(User);
+
+const users = try db.query(User)
+    .raw // switch to unsafe
+    .where("role = ? or role = ?", .{ "admin", "editor" }) // pass multiple args
+    .fetchAll(User);
+```
 
 ## Pooling
 
