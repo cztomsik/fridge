@@ -70,6 +70,10 @@ pub const SQLite3 = opaque {
         }
     }
 
+    pub fn kind(_: *SQLite3) []const u8 {
+        return "sqlite3";
+    }
+
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {
         const csql = try std.heap.c_allocator.dupeZ(u8, sql);
         defer std.heap.c_allocator.free(csql);

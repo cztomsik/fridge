@@ -9,6 +9,7 @@ pub const Connection = struct {
 
     pub fn VTable(comptime H: type) type {
         return struct {
+            kind: *const fn (self: H) []const u8,
             execAll: *const fn (self: H, sql: []const u8) Error!void,
             prepare: *const fn (self: H, sql: []const u8) Error!Statement,
             rowsAffected: *const fn (self: H) Error!usize,
@@ -20,6 +21,10 @@ pub const Connection = struct {
 
     pub fn open(comptime T: type, options: T.Options) !Connection {
         return util.upcast(try T.open(options), Connection);
+    }
+
+    pub fn kind(self: Connection) []const u8 {
+        return self.vtable.kind(self.handle);
     }
 
     /// Executes all SQL statements in the given string.

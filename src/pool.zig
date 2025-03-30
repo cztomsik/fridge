@@ -123,6 +123,10 @@ const PoolConn = struct {
         };
     }
 
+    pub fn kind(self: *PoolConn) []const u8 {
+        return self.conn.kind();
+    }
+
     pub fn execAll(self: *PoolConn, sql: []const u8) !void {
         return check(self.conn.execAll(sql));
     }
@@ -168,6 +172,10 @@ const TestConn = struct {
         const ptr = try std.testing.allocator.create(TestConn);
         ptr.id = created.fetchAdd(1, .monotonic);
         return ptr;
+    }
+
+    pub fn kind(_: *TestConn) []const u8 {
+        unreachable;
     }
 
     pub fn execAll(_: *TestConn, _: []const u8) !void {
