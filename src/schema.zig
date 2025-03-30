@@ -10,47 +10,78 @@ pub const Schema = struct {
         return .{ .db = db };
     }
 
-    pub fn createTable(self: *const Schema, name: []const u8) *TableBuilder {
+    pub fn createTable(self: Schema, name: []const u8) *TableBuilder {
         const res = self.db.arena.create(TableBuilder) catch @panic("OOM");
-        res.* = .{ .db = self.db, .name = name };
+        res.* = .{ .db = self.db, .table = name };
         return res;
     }
 
-    pub fn dropTable(self: *const Schema, name: []const u8) !void {
-        try self.db.raw("DROP TABLE", .{}).table(name).exec();
+    pub fn alterTable(self: Schema, name: []const u8) *AlterBuilder {
+        const res = self.db.arena.create(AlterBuilder) catch @panic("OOM");
+        res.* = .{ .db = self.db, .table = name };
+        return res;
+    }
+
+    pub fn renameTable(self: Schema, old_name: []const u8, new_name: []const u8) !void {
+        const sql = try std.fmt.allocPrint(self.db.arena, "ALTER TABLE {s} RENAME TO {s}", .{ old_name, new_name });
+        try self.db.conn.execAll(sql);
+    }
+
+    pub fn dropTable(self: Schema, name: []const u8) !void {
+        try self.db.raw("DROP TABLE", {}).table(name).exec();
     }
 };
 
 pub const TableBuilder = struct {
     db: *Session,
-    name: []const u8,
+    table: []const u8,
     columns: std.ArrayListUnmanaged(Column) = .{},
     constraints: std.ArrayListUnmanaged(Constraint) = .{},
 
     pub fn id(self: *TableBuilder) *TableBuilder {
-        return self.column("id", ColumnType.int, .{ .primary_key = true });
+        return self.column("id", ColumnType.int, .{
+            .primary_key = true,
+        });
     }
 
     pub fn column(self: *TableBuilder, name: []const u8, ctype: ColumnType, opts: ColumnOptions) *TableBuilder {
-        const col: Column = .{ .name = name, .type = ctype, .not_null = !opts.nullable and !opts.primary_key };
-        if (opts.primary_key) _ = self.primaryKey(name);
-        if (opts.unique) _ = self.unique(name);
+        const col: Column = .{
+            .name = name,
+            .type = ctype,
+            .not_null = !opts.nullable and !opts.primary_key,
+            .default = opts.default,
+        };
+
+        if (opts.primary_key) {
+            _ = self.primaryKey(name);
+        }
+
+        if (opts.unique) {
+            _ = self.unique(name);
+        }
+
         return self.append("columns", col);
     }
 
     pub fn primaryKey(self: *TableBuilder, cols: []const u8) *TableBuilder {
-        return self.append("constraints", .{ .type = ConstraintType.primary_key, .body = cols });
+        return self.append("constraints", .{
+            .type = ConstraintType.primary_key,
+            .body = cols,
+        });
     }
 
     pub fn unique(self: *TableBuilder, cols: []const u8) *TableBuilder {
-        return self.append("constraints", .{ .type = ConstraintType.unique, .body = cols });
+        return self.append("constraints", .{
+            .type = ConstraintType.unique,
+            .body = cols,
+        });
     }
 
     pub fn toSql(self: TableBuilder, buf: *SqlBuf) !void {
         // TODO: db.raw() should be flexible-enough for this
 
         try buf.append("CREATE TABLE ");
-        try buf.append(self.name);
+        try buf.append(self.table);
         try buf.append(" (\n  ");
 
         for (self.columns.items, 0..) |col, i| {
@@ -70,7 +101,7 @@ pub const TableBuilder = struct {
     pub fn exec(self: TableBuilder) !void {
         var buf = try SqlBuf.init(self.db.arena);
         try buf.append(self);
-        try self.db.exec(buf.buf.items, .{});
+        try self.db.conn.execAll(buf.buf.items);
     }
 
     fn append(self: *TableBuilder, comptime slot: []const u8, item: std.meta.Child(@FieldType(TableBuilder, slot).Slice)) *TableBuilder {
@@ -79,26 +110,47 @@ pub const TableBuilder = struct {
     }
 };
 
+pub const AlterBuilder = struct {
+    db: *Session,
+    table: []const u8,
+    // changes: std.ArrayListUnmanaged(TableChange) = .{},
+
+};
+
+pub const TableChange = union(enum) {
+};
+
 pub const Column = struct {
     name: []const u8,
     type: ColumnType,
     not_null: bool,
+    default: ?[]const u8,
 
     pub fn toSql(self: Column, buf: *SqlBuf) !void {
         try buf.append(self.name);
         try buf.append(" ");
         try buf.append(self.type);
-        if (self.not_null) try buf.append(" NOT NULL");
+
+        if (self.not_null) {
+            try buf.append(" NOT NULL");
+        }
+
+        if (self.default) |def| {
+            try buf.append(" DEFAULT ");
+            try buf.append(def);
+        }
     }
 };
 
 pub const ColumnType = enum {
-    int,
+    integer,
     text,
+
+    pub const int = ColumnType.integer;
 
     pub fn toSql(self: ColumnType, buf: *SqlBuf) !void {
         try buf.append(switch (self) {
-            .int => "INTEGER",
+            .integer => "INTEGER",
             .text => "TEXT",
         });
     }
@@ -108,6 +160,7 @@ pub const ColumnOptions = struct {
     nullable: bool = false,
     primary_key: bool = false,
     unique: bool = false,
+    default: ?[]const u8 = null,
 };
 
 pub const Constraint = struct {
@@ -138,13 +191,12 @@ const t = std.testing;
 const createDb = @import("testing.zig").createDb;
 const expectDdl = @import("testing.zig").expectDdl;
 
-test {
-    const Person = struct { id: ?u32 = null, name: []const u8, age: u32 };
-
+test "basic usage" {
     var db = try createDb("");
     defer db.deinit();
+    const schema = db.schema();
 
-    try db.schema().createTable("person")
+    try schema.createTable("person")
         .id()
         .column("name", .text, .{})
         .column("age", .int, .{})
@@ -159,8 +211,6 @@ test {
         \\) STRICT
     );
 
-    const data = try db.create(Person, .{ .name = "Alice", .age = 30 });
-    std.debug.print("{any}\n", .{data});
-
-    try db.schema().dropTable("person");
+    try schema.dropTable("person");
 }
+
