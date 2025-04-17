@@ -124,8 +124,24 @@ pub const Query = struct {
         return self.append(if (self.parts.where == null) .WHERE else .AND, sql, .from(args, self.db));
     }
 
+    pub fn ifWhere(self: Query, cond: bool, sql: []const u8, args: anytype) Query {
+        return if (cond) self.where(sql, args) else self;
+    }
+
+    pub fn maybeWhere(self: Query, comptime sql: []const u8, arg: anytype) Query {
+        return if (arg) |v| self.where(sql, v) else self;
+    }
+
     pub fn orWhere(self: Query, sql: []const u8, args: anytype) Query {
         return self.append(if (self.parts.where == null) .WHERE else .OR, sql, .from(args, self.db));
+    }
+
+    pub fn orIfWhere(self: Query, cond: bool, sql: []const u8, args: anytype) Query {
+        return if (cond) self.orWhere(sql, args) else self;
+    }
+
+    pub fn orMaybeWhere(self: Query, comptime sql: []const u8, arg: anytype) Query {
+        return if (arg) |v| self.orWhere(sql, v) else self;
     }
 
     pub fn groupBy(self: Query, sql: []const u8) Query {
