@@ -64,17 +64,27 @@ pub const TableBuilder = struct {
     }
 
     pub fn primaryKey(self: *TableBuilder, cols: []const u8) *TableBuilder {
-        return self.append("constraints", .{
-            .type = ConstraintType.primary_key,
-            .body = cols,
-        });
+        return self.append("constraints", .{ .primary_key = cols });
     }
 
     pub fn unique(self: *TableBuilder, cols: []const u8) *TableBuilder {
-        return self.append("constraints", .{
-            .type = ConstraintType.unique,
-            .body = cols,
-        });
+        return self.append("constraints", .{ .unique = cols });
+    }
+
+    pub fn check(self: *TableBuilder, expr: []const u8) *TableBuilder {
+        return self.append("constraints", .{ .check = expr });
+    }
+
+    pub fn foreignKey(self: *TableBuilder, cols: []const u8, table: []const u8, opts: FkOptions) *TableBuilder {
+        const fk: Fk = .{
+            .cols = cols,
+            .ref_table = table,
+            .ref_cols = opts.columns,
+            .on_delete = opts.on_delete,
+            .on_update = opts.on_update,
+        };
+
+        return self.append("constraints", .{ .foreign_key = fk });
     }
 
     pub fn toSql(self: TableBuilder, buf: *SqlBuf) !void {
@@ -163,35 +173,88 @@ pub const ColumnOptions = struct {
     default: ?[]const u8 = null,
 };
 
-pub const Constraint = struct {
-    type: ConstraintType,
-    body: []const u8,
+pub const Constraint = union(enum) {
+    primary_key: []const u8,
+    unique: []const u8,
+    check: []const u8,
+    foreign_key: Fk,
 
     pub fn toSql(self: Constraint, buf: *SqlBuf) !void {
-        try buf.append(self.type);
-        try buf.append(" (");
-        try buf.append(self.body);
-        try buf.append(")");
-    }
-};
-
-pub const ConstraintType = enum {
-    primary_key,
-    unique,
-
-    pub fn toSql(self: ConstraintType, buf: *SqlBuf) !void {
         try buf.append(switch (self) {
             .primary_key => "PRIMARY KEY",
             .unique => "UNIQUE",
+            .check => "CHECK",
+            .foreign_key => "FOREIGN KEY",
+        });
+
+        switch (self) {
+            .foreign_key => |fk| try buf.append(fk),
+            inline else => |v| {
+                try buf.append(" (");
+                try buf.append(v);
+                try buf.append(")");
+            },
+        }
+    }
+};
+
+const Fk = struct {
+    cols: []const u8,
+    ref_table: []const u8,
+    ref_cols: []const u8,
+    on_update: FkAction = .no_action,
+    on_delete: FkAction = .no_action,
+
+    pub fn toSql(self: Fk, buf: *SqlBuf) !void {
+        try buf.append(" (");
+        try buf.append(self.cols);
+        try buf.append(") REFERENCES ");
+        try buf.append(self.ref_table);
+        try buf.append(" (");
+        try buf.append(self.ref_cols);
+        try buf.append(")");
+
+        if (self.on_update != .no_action) {
+            try buf.append(" ON UPDATE ");
+            try buf.append(self.on_update);
+        }
+
+        if (self.on_delete != .no_action) {
+            try buf.append(" ON DELETE ");
+            try buf.append(self.on_delete);
+        }
+    }
+};
+
+pub const FkAction = enum {
+    set_null,
+    set_default,
+    cascade,
+    restrict,
+    no_action,
+
+    pub fn toSql(self: FkAction, buf: *SqlBuf) !void {
+        try buf.append(switch (self) {
+            .set_null => "SET NULL",
+            .set_default => "SET DEFAULT",
+            .cascade => "CASCADE",
+            .restrict => "RESTRICT",
+            .no_action => "NO ACTION",
         });
     }
+};
+
+pub const FkOptions = struct {
+    columns: []const u8 = "id",
+    on_delete: FkAction = .no_action,
+    on_update: FkAction = .no_action,
 };
 
 const t = std.testing;
 const createDb = @import("testing.zig").createDb;
 const expectDdl = @import("testing.zig").expectDdl;
 
-test "basic usage" {
+test "basic create" {
     var db = try createDb("");
     defer db.deinit();
     const schema = db.schema();
