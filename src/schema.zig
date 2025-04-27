@@ -123,11 +123,90 @@ pub const TableBuilder = struct {
 pub const AlterBuilder = struct {
     db: *Session,
     table: []const u8,
-    // changes: std.ArrayListUnmanaged(TableChange) = .{},
+    changes: std.ArrayListUnmanaged(TableChange) = .{},
 
+    pub fn addColumn(self: *AlterBuilder, name: []const u8, ctype: ColumnType, opts: ColumnOptions) *AlterBuilder {
+        if (opts.primary_key) {
+            // TODO
+            // _ = self.addPrimaryKey(name);
+        }
+
+        if (opts.unique) {
+            // TODO
+            // _ = self.addUnique(name);
+        }
+
+        return self.append(.{ .add_column = .{ name, ctype, opts } });
+    }
+
+    pub fn renameColumn(self: *AlterBuilder, old_name: []const u8, new_name: []const u8) *AlterBuilder {
+        return self.append(.{ .rename_column = .{ old_name, new_name } });
+    }
+
+    pub fn dropColumn(self: *AlterBuilder, name: []const u8) *AlterBuilder {
+        return self.append(.{ .drop_column = name });
+    }
+
+    fn append(self: *AlterBuilder, change: TableChange) *AlterBuilder {
+        self.changes.append(self.db.arena, change) catch @panic("OOM");
+        return self;
+    }
+
+    pub fn exec(self: *AlterBuilder) !void {
+        // const sqlite = std.mem.eql(u8, self.db.conn.kind(), "sqlite3");
+
+        // if (sqlite and !empty) {
+        //     var tws = try TwelveStep.init(self.db, self.table);
+        //     for (self.changes.items) |ch| try tws.apply(ch);
+        //     try tws.exec();
+        // } else {
+        var buf = try SqlBuf.init(self.db.arena);
+        try buf.append(self);
+        try self.db.conn.execAll(buf.buf.items);
+        // }
+    }
+
+    pub fn toSql(self: *AlterBuilder, buf: *SqlBuf) !void {
+        for (self.changes.items, 0..) |ch, i| {
+            if (i > 0) try buf.append(";\n");
+
+            try buf.append("ALTER TABLE ");
+            try buf.append(self.table);
+            try buf.append(" ");
+            try buf.append(ch);
+        }
+    }
 };
 
 pub const TableChange = union(enum) {
+    add_column: struct { []const u8, ColumnType, ColumnOptions },
+    rename_column: struct { []const u8, []const u8 },
+    drop_column: []const u8,
+
+    pub fn toSql(self: TableChange, buf: *SqlBuf) !void {
+        switch (self) {
+            .add_column => |opts| {
+                try buf.append("ADD COLUMN ");
+                try buf.append(opts[0]);
+                try buf.append(" ");
+                try buf.append(opts[1]);
+
+                if (!opts[2].nullable) {
+                    try buf.append(" NOT NULL");
+                }
+            },
+            .rename_column => |names| {
+                try buf.append("RENAME COLUMN ");
+                try buf.append(names[0]);
+                try buf.append(" TO ");
+                try buf.append(names[1]);
+            },
+            .drop_column => |name| {
+                try buf.append("DROP COLUMN ");
+                try buf.append(name);
+            },
+        }
+    }
 };
 
 pub const Column = struct {
@@ -252,6 +331,7 @@ pub const FkOptions = struct {
 
 const t = std.testing;
 const createDb = @import("testing.zig").createDb;
+const expectSql = @import("testing.zig").expectSql;
 const expectDdl = @import("testing.zig").expectDdl;
 
 test "basic create" {
@@ -277,3 +357,67 @@ test "basic create" {
     try schema.dropTable("person");
 }
 
+test "basic alter" {
+    var db = try createDb("");
+    defer db.deinit();
+    const schema = db.schema();
+
+    try schema.createTable("person")
+        .id()
+        .column("age", .int, .{})
+        .exec();
+
+    try schema.alterTable("person")
+        .addColumn("name", .text, .{})
+        .dropColumn("age")
+        .exec();
+
+    try expectDdl(&db, "person",
+        \\CREATE TABLE person (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  PRIMARY KEY (id)
+        \\) STRICT
+    );
+
+    try schema.dropTable("person");
+}
+
+test "advanced create" {
+    var db = try createDb("");
+    defer db.deinit();
+    const schema = db.schema();
+
+    try schema.createTable("employee")
+        .id()
+        .column("name", .text, .{})
+        .column("department_id", .int, .{})
+        .foreignKey("department_id", "department", .{})
+        .exec();
+
+    try schema.createTable("department")
+        .id()
+        .column("name", .text, .{})
+        .exec();
+
+    try expectDdl(&db, "employee",
+        \\CREATE TABLE employee (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  department_id INTEGER NOT NULL,
+        \\  PRIMARY KEY (id),
+        \\  FOREIGN KEY (department_id) REFERENCES department (id)
+        \\) STRICT
+    );
+
+    try expectDdl(&db, "department",
+        \\CREATE TABLE department (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  PRIMARY KEY (id)
+        \\) STRICT
+    );
+
+    try schema.dropTable("department");
+    try schema.dropTable("employee");
+}
