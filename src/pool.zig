@@ -4,6 +4,11 @@ const Connection = @import("connection.zig").Connection;
 const Statement = @import("statement.zig").Statement;
 const Session = @import("session.zig").Session;
 
+/// General options for the whole pool.
+pub const PoolOptions = struct {
+    max_count: usize = 10,
+};
+
 /// A simple connection pool. This is especially useful for web servers where
 /// each request needs its own "session" with separate transactions. The pool
 /// makes it easy to obtain a connection at the start of a request and release
@@ -12,157 +17,153 @@ const Session = @import("session.zig").Session;
 /// NOTE: This struct is self-referential, so it needs to be heap-allocated or
 /// pinned/never moved. Pinning is better, because the pool can still be
 /// referenced when `deinit()` is being called - it will just fail.
-pub const Pool = struct {
-    conns: std.ArrayList(PoolConn),
-    factory: *const fn (opts: *const anyopaque) Error!Connection,
-    opts: *const anyopaque,
-    mutex: std.Thread.Mutex = .{},
-    wait: std.Thread.Condition = .{},
+pub fn Pool(comptime T: type) type {
+    return struct {
+        conns: std.ArrayList(PoolConnection(T)),
+        conn_opts: T.Options,
+        mutex: std.Thread.Mutex = .{},
+        wait: std.Thread.Condition = .{},
 
-    const Error = error{ OutOfMemory, ConnectionFailed, PoolClosing };
+        const Error = error{ OutOfMemory, ConnectionFailed, PoolClosing };
 
-    /// Initialize a connection pool with capacity for `max_count` connections
-    /// which will be created using the provided driver-specific `options`.
-    pub fn init(comptime T: type, allocator: std.mem.Allocator, max_count: usize, options: *const T.Options) !Pool {
-        const H = struct {
-            fn open(opts: *const anyopaque) Error!Connection {
-                return Connection.open(T, @as(*const T.Options, @ptrCast(@alignCast(opts))).*);
-            }
-        };
-
-        return .{
-            .conns = try std.ArrayList(PoolConn).initCapacity(allocator, max_count),
-            .factory = H.open,
-            .opts = options,
-        };
-    }
-
-    pub fn getSession(self: *Pool, allocator: std.mem.Allocator) Error!Session {
-        var sess = try Session.init(allocator, try self.getConnection());
-        sess.owned = true;
-        return sess;
-    }
-
-    /// Get a connection from the pool. If the pool is empty, this will block
-    /// until a connection is available.
-    pub fn getConnection(self: *Pool) Error!Connection {
-        // TODO:
-        // Opening a connection is driver-specific and it can take some time to
-        // open it (e.g. DNS). It would be better to not block the entire pool
-        // while waiting. On the other hand, it only happens once every time the
-        // pool is empty, so maybe it's not worth the extra complexity.
-        self.mutex.lock();
-        defer self.mutex.unlock();
-
-        // TODO:
-        // What's worse is that we might loose the connection (network error)
-        // and then we should retry opening it. This is left for later.
-
-        while (true) {
-            for (self.conns.items) |*pconn| {
-                if (pconn.available) {
-                    pconn.available = false;
-                    return util.upcast(pconn, Connection);
-                }
-            }
-
-            if (self.conns.items.len < self.conns.capacity) {
-                const pconn = self.conns.addOneAssumeCapacity();
-                pconn.* = .{ .pool = self, .conn = try self.factory(self.opts) };
-                return util.upcast(pconn, Connection);
-            }
-
-            if (self.conns.capacity == 0) {
-                return error.PoolClosing;
-            }
-
-            self.wait.wait(&self.mutex);
-            continue;
+        /// Initialize a connection pool with capacity for `max_count` connections
+        /// which will be created using the provided driver-specific `options`.
+        pub fn init(allocator: std.mem.Allocator, pool_opts: PoolOptions, conn_opts: T.Options) !@This() {
+            return .{
+                .conns = try .initCapacity(allocator, pool_opts.max_count),
+                .conn_opts = conn_opts,
+            };
         }
-    }
 
-    /// Deinitialize the pool and close all connections.
-    pub fn deinit(self: *Pool) void {
-        // Steal the list which will prevent any new connections (and deadlocks)
-        var pconns = brk: {
+        pub fn getSession(self: *@This(), allocator: std.mem.Allocator) Error!Session {
+            return .init(allocator, try self.getConnection());
+        }
+
+        /// Get a connection from the pool. If the pool is empty, this will block
+        /// until a connection is available.
+        pub fn getConnection(self: *@This()) Error!Connection {
+            // TODO:
+            // Opening a connection is driver-specific and it can take some time to
+            // open it (e.g. DNS). It would be better to not block the entire pool
+            // while waiting. On the other hand, it only happens once every time the
+            // pool is empty, so maybe it's not worth the extra complexity.
             self.mutex.lock();
             defer self.mutex.unlock();
-            break :brk self.conns.moveToUnmanaged();
-        };
 
-        // Notify all waiting threads that the pool is closing
-        self.wait.broadcast();
+            // TODO:
+            // What's worse is that we might loose the connection (network error)
+            // and then we should retry opening it. This is left for later.
 
-        // Now we can aquire the mutex and continue without worying about deadlocks
-        self.mutex.lock();
-        defer self.mutex.unlock();
+            while (true) {
+                for (self.conns.items) |*pconn| {
+                    if (pconn.available) {
+                        pconn.available = false;
+                        return util.upcast(pconn, Connection);
+                    }
+                }
 
-        // Gracefully close all connections
-        for (pconns.items) |*pconn| {
-            while (!pconn.available) {
-                // Wait up to 5 seconds and then close the connection forcefully
-                self.wait.timedWait(&self.mutex, 5 * std.time.ns_per_s) catch break;
+                if (self.conns.items.len < self.conns.capacity) {
+                    const pconn = self.conns.addOneAssumeCapacity();
+                    pconn.* = .{ .pool = self, .conn = try .open(T, self.conns.allocator, self.conn_opts) };
+                    return util.upcast(pconn, Connection);
+                }
+
+                if (self.conns.capacity == 0) {
+                    return error.PoolClosing;
+                }
+
+                self.wait.wait(&self.mutex);
+                continue;
             }
-
-            pconn.conn.deinit();
         }
 
-        pconns.deinit(self.conns.allocator);
-    }
-};
+        /// Deinitialize the pool and close all connections.
+        pub fn deinit(self: *@This()) void {
+            // Steal the list which will prevent any new connections (and deadlocks)
+            var pconns = brk: {
+                self.mutex.lock();
+                defer self.mutex.unlock();
+                break :brk self.conns.moveToUnmanaged();
+            };
 
-const PoolConn = struct {
-    pool: *Pool,
-    conn: Connection,
-    available: bool = false,
+            // Notify all waiting threads that the pool is closing
+            self.wait.broadcast();
 
-    inline fn check(res: anytype) @TypeOf(res) {
-        return res catch |e| switch (e) {
-            // TODO: check for error.BrokenPipe/ConnectionClosed and reconnect?
-            else => e,
-        };
-    }
+            // Now we can aquire the mutex and continue without worying about deadlocks
+            self.mutex.lock();
+            defer self.mutex.unlock();
 
-    pub fn kind(self: *PoolConn) []const u8 {
-        return self.conn.kind();
-    }
+            // Gracefully close all connections
+            for (pconns.items) |*pconn| {
+                while (!pconn.available) {
+                    // Wait up to 5 seconds and then close the connection forcefully
+                    self.wait.timedWait(&self.mutex, 5 * std.time.ns_per_s) catch break;
+                }
 
-    pub fn execAll(self: *PoolConn, sql: []const u8) !void {
-        return check(self.conn.execAll(sql));
-    }
+                pconn.conn.deinit();
+            }
 
-    pub fn prepare(self: *PoolConn, sql: []const u8) !Statement {
-        return check(self.conn.prepare(sql));
-    }
+            pconns.deinit(self.conns.allocator);
+        }
+    };
+}
 
-    pub fn rowsAffected(self: *PoolConn) !usize {
-        return check(self.conn.rowsAffected());
-    }
+fn PoolConnection(comptime T: type) type {
+    return struct {
+        pool: *Pool(T),
+        conn: Connection,
+        available: bool = false,
 
-    pub fn lastInsertRowId(self: *PoolConn) !i64 {
-        return check(self.conn.lastInsertRowId());
-    }
+        const PoolConn = @This();
 
-    pub fn lastError(self: *PoolConn) []const u8 {
-        return self.conn.lastError();
-    }
+        inline fn check(res: anytype) @TypeOf(res) {
+            return res catch |e| switch (e) {
+                // TODO: check for error.BrokenPipe/ConnectionClosed and reconnect?
+                else => e,
+            };
+        }
 
-    pub fn deinit(self: *PoolConn) void {
-        self.pool.mutex.lock();
+        pub fn kind(self: *PoolConn) []const u8 {
+            return self.conn.kind();
+        }
 
-        std.debug.assert(!self.available);
-        self.available = true;
+        pub fn execAll(self: *PoolConn, sql: []const u8) !void {
+            return check(self.conn.execAll(sql));
+        }
 
-        self.pool.mutex.unlock();
-        self.pool.wait.signal();
-    }
-};
+        pub fn prepare(self: *PoolConn, sql: []const u8) !Statement {
+            return check(self.conn.prepare(sql));
+        }
+
+        pub fn rowsAffected(self: *PoolConn) !usize {
+            return check(self.conn.rowsAffected());
+        }
+
+        pub fn lastInsertRowId(self: *PoolConn) !i64 {
+            return check(self.conn.lastInsertRowId());
+        }
+
+        pub fn lastError(self: *PoolConn) []const u8 {
+            return self.conn.lastError();
+        }
+
+        pub fn deinit(self: *PoolConn) void {
+            self.pool.mutex.lock();
+
+            std.debug.assert(!self.available);
+            self.available = true;
+
+            self.pool.mutex.unlock();
+            self.pool.wait.signal();
+        }
+    };
+}
 
 const t = std.testing;
 const TestConn = @import("testing.zig").TestConn;
 
 test Pool {
-    var pool = try Pool.init(TestConn, t.allocator, 3, &{});
+    var pool = try Pool(TestConn).init(t.allocator, .{ .max_count = 3 }, {});
     defer pool.deinit();
 
     var c1 = try pool.getConnection();
@@ -192,7 +193,7 @@ test Pool {
 }
 
 const Runner = struct {
-    pool: *Pool,
+    pool: *Pool(TestConn),
     thread: std.Thread,
 
     fn run(self: *Runner) !void {
@@ -208,7 +209,7 @@ const Runner = struct {
 };
 
 test "Thread safety" {
-    var pool = try Pool.init(TestConn, t.allocator, 3, &{});
+    var pool = try Pool(TestConn).init(t.allocator, .{ .max_count = 3 }, {});
     defer pool.deinit();
 
     TestConn.created.store(0, .release);

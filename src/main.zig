@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const Pool = @import("pool.zig").Pool;
+pub const PoolOptions = @import("pool.zig").PoolOptions;
 pub const SQLite3 = @import("sqlite.zig").SQLite3;
 
 pub const Value = @import("value.zig").Value;
