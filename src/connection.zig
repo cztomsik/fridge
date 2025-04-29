@@ -19,8 +19,8 @@ pub const Connection = struct {
         };
     }
 
-    pub fn open(comptime T: type, options: T.Options) !Connection {
-        return util.upcast(try T.open(options), Connection);
+    pub fn open(comptime T: type, allocator: std.mem.Allocator, options: T.Options) !Connection {
+        return util.upcast(try T.open(allocator, options), Connection);
     }
 
     pub fn kind(self: Connection) []const u8 {

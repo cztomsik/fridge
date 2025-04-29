@@ -11,6 +11,7 @@ const c = @cImport(
 
 pub const SQLite3 = opaque {
     pub const Options = struct {
+        dir: ?[]const u8 = null,
         filename: [:0]const u8,
         flags: c_int = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX | c.SQLITE_OPEN_EXRESCODE,
         busy_timeout: ?c_int = 5_000,
@@ -18,11 +19,25 @@ pub const SQLite3 = opaque {
         extensions: []const []const u8 = &.{},
     };
 
-    pub fn open(options: Options) !*SQLite3 {
+    pub fn open(allocator: std.mem.Allocator, options: Options) !*SQLite3 {
+        if (options.dir) |dir| {
+            if (std.mem.indexOfScalar(u8, options.filename, ':') == null) {
+                std.fs.cwd().makePath(dir) catch {};
+                const path = try std.fs.path.joinZ(allocator, &.{ dir, options.filename });
+                defer allocator.free(path);
+
+                return openPath(path, options);
+            }
+        }
+
+        return openPath(options.filename, options);
+    }
+
+    fn openPath(path: [:0]const u8, options: Options) !*SQLite3 {
         var pdb: ?*c.sqlite3 = null;
         errdefer _ = if (pdb != null) c.sqlite3_close(pdb); // SQLite may init the handle even if it fails to open the database.
 
-        check(c.sqlite3_open_v2(options.filename.ptr, &pdb, options.flags, null)) catch return error.ConnectionFailed;
+        check(c.sqlite3_open_v2(path, &pdb, options.flags, null)) catch return error.ConnectionFailed;
         const db: *SQLite3 = @ptrCast(pdb.?);
 
         if (options.busy_timeout) |v| {
@@ -75,6 +90,7 @@ pub const SQLite3 = opaque {
     }
 
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {
+        // TODO: c_allocator is just a quickfix for this https://github.com/cztomsik/fridge/blob/62bf1daeccf6781b5846ec70042d2ebaf3fb8644/src/sqlite.zig#L50
         const csql = try std.heap.c_allocator.dupeZ(u8, sql);
         defer std.heap.c_allocator.free(csql);
 
