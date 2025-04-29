@@ -12,14 +12,16 @@ const Schema = @import("schema.zig").Schema;
 pub const Session = struct {
     arena: std.mem.Allocator,
     conn: Connection,
-    owned: bool = false,
 
+    /// Generic shorthand for `Session.init(T.open(allocator, options))`
     pub fn open(comptime T: type, allocator: std.mem.Allocator, options: T.Options) !Session {
-        var sess = try Session.init(allocator, try Connection.open(T, options));
-        sess.owned = true;
-        return sess;
+        const conn = try Connection.open(T, allocator, options);
+        errdefer conn.deinit();
+
+        return .init(allocator, conn);
     }
 
+    /// Create a new session (taking ownership of the connection)
     pub fn init(allocator: std.mem.Allocator, conn: Connection) !Session {
         const arena = try allocator.create(std.heap.ArenaAllocator);
         arena.* = std.heap.ArenaAllocator.init(allocator);
@@ -30,14 +32,13 @@ pub const Session = struct {
         };
     }
 
+    /// Close the session (including the connection)
     pub fn deinit(self: *Session) void {
         const arena: *std.heap.ArenaAllocator = @ptrCast(@alignCast(self.arena.ptr));
         arena.deinit();
         arena.child_allocator.destroy(arena);
 
-        if (self.owned) {
-            self.conn.deinit();
-        }
+        self.conn.deinit();
     }
 
     pub fn prepare(self: *Session, sql: []const u8, args: anytype) !Statement {

@@ -13,7 +13,7 @@ pub fn createDb(ddl: []const u8) !Session {
 }
 
 pub fn fakeDb() !Session {
-    return Session.init(std.testing.allocator, undefined);
+    return Session.open(TestConn, std.testing.allocator, {});
 }
 
 pub fn expectSql(q: anytype, expected: []const u8) !void {
