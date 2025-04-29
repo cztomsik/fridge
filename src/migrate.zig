@@ -7,12 +7,9 @@ const SQLite3 = @import("sqlite.zig").SQLite3;
 const Session = @import("session.zig").Session;
 const log = std.log.scoped(.db_migrate);
 
-pub fn migrate(allocator: std.mem.Allocator, filename: [:0]const u8, ddl: []const u8) !void {
-    var pristine = try Session.open(SQLite3, allocator, .{ .filename = ":memory:" });
+pub fn migrate(db: *Session, ddl: []const u8) !void {
+    var pristine = try Session.open(SQLite3, db.arena, .{ .filename = ":memory:" });
     defer pristine.deinit();
-
-    var db = try Session.open(SQLite3, allocator, .{ .filename = filename });
-    defer db.deinit();
 
     // Create empty database with the desired schema
     log.debug("-- Creating pristine database", .{});
@@ -29,7 +26,7 @@ pub fn migrate(allocator: std.mem.Allocator, filename: [:0]const u8, ddl: []cons
 
     // Migrate each object type
     inline for (.{ "table", "view", "trigger", "index" }) |kind| {
-        try migrateObjects(&db, &pristine, kind);
+        try migrateObjects(db, &pristine, kind);
     }
 
     // Commit and re-enable foreign key checks
