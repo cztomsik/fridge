@@ -1,5 +1,6 @@
 const std = @import("std");
 const Session = @import("session.zig").Session;
+const Statement = @import("statement.zig").Statement;
 const SqlBuf = @import("sql.zig").SqlBuf;
 
 pub fn createDb(ddl: []const u8) !Session {
@@ -29,3 +30,47 @@ pub fn expectDdl(db: *Session, object_name: []const u8, expected: []const u8) !v
         (try db.raw("SELECT sql FROM sqlite_master", {}).where("name = ?", object_name).get([]const u8)).?,
     );
 }
+
+pub const TestConn = struct {
+    id: u32,
+
+    pub const Options = void;
+
+    pub var created: std.atomic.Value(u32) = .{ .raw = 0 };
+    pub var destroyed: std.atomic.Value(u32) = .{ .raw = 0 };
+
+    pub fn open(_: std.mem.Allocator, _: void) !*TestConn {
+        const ptr = try std.testing.allocator.create(TestConn);
+        ptr.id = created.fetchAdd(1, .monotonic);
+        return ptr;
+    }
+
+    pub fn kind(_: *TestConn) []const u8 {
+        unreachable;
+    }
+
+    pub fn execAll(_: *TestConn, _: []const u8) !void {
+        unreachable;
+    }
+
+    pub fn prepare(_: *TestConn, _: []const u8) !Statement {
+        unreachable;
+    }
+
+    pub fn rowsAffected(_: *TestConn) !usize {
+        unreachable;
+    }
+
+    pub fn lastInsertRowId(_: *TestConn) !i64 {
+        unreachable;
+    }
+
+    pub fn lastError(_: *TestConn) []const u8 {
+        unreachable;
+    }
+
+    pub fn deinit(self: *TestConn) void {
+        std.testing.allocator.destroy(self);
+        _ = destroyed.fetchAdd(1, .monotonic);
+    }
+};

@@ -159,50 +159,7 @@ const PoolConn = struct {
 };
 
 const t = std.testing;
-
-const TestConn = struct {
-    id: u32,
-
-    pub const Options = void;
-
-    var created: std.atomic.Value(u32) = .{ .raw = 0 };
-    var destroyed: std.atomic.Value(u32) = .{ .raw = 0 };
-
-    pub fn open(_: void) !*TestConn {
-        const ptr = try std.testing.allocator.create(TestConn);
-        ptr.id = created.fetchAdd(1, .monotonic);
-        return ptr;
-    }
-
-    pub fn kind(_: *TestConn) []const u8 {
-        unreachable;
-    }
-
-    pub fn execAll(_: *TestConn, _: []const u8) !void {
-        unreachable;
-    }
-
-    pub fn prepare(_: *TestConn, _: []const u8) !Statement {
-        unreachable;
-    }
-
-    pub fn rowsAffected(_: *TestConn) !usize {
-        unreachable;
-    }
-
-    pub fn lastInsertRowId(_: *TestConn) !i64 {
-        unreachable;
-    }
-
-    pub fn lastError(_: *TestConn) []const u8 {
-        unreachable;
-    }
-
-    pub fn deinit(self: *TestConn) void {
-        std.testing.allocator.destroy(self);
-        _ = destroyed.fetchAdd(1, .monotonic);
-    }
-};
+const TestConn = @import("testing.zig").TestConn;
 
 test Pool {
     var pool = try Pool.init(TestConn, t.allocator, 3, &{});
