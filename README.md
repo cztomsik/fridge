@@ -167,7 +167,7 @@ Here's how to use the `fr.Pool`:
 
 ```zig
 // During your app initialization
-var pool = fr.Pool.init(SQLite3, allocator, 5, .{ .filename = ":memory:" });
+var pool = try fr.Pool(fr.SQLite3).init(allocator, .{ .max_count = 5 }, .{ .filename = ":memory:" });
 defer pool.deinit();
 
 // Inside your request handler
