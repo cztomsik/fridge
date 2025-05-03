@@ -4,6 +4,7 @@ const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
 const Error = @import("error.zig").Error;
 
+/// Low-level prepared statement - avoid using.
 pub const Statement = extern struct {
     handle: *anyopaque,
     vtable: *const VTable(*anyopaque),
@@ -22,12 +23,16 @@ pub const Statement = extern struct {
         self.vtable.deinit(self.handle);
     }
 
+    /// Executes the statement.
     pub fn exec(self: *Statement) !void {
         while (try self.step()) {
             // SQLite needs this (should be harmless for others)
         }
     }
 
+    /// Returns a single row from the current result set.
+    /// NOTE that the database (ie. SQLite) is free to hold a lock while the
+    /// result set is not completely exhausted!
     pub fn next(self: *Statement, comptime R: type, arena: std.mem.Allocator) !?R {
         if (!try self.step()) {
             return null;
@@ -57,18 +62,22 @@ pub const Statement = extern struct {
         return res;
     }
 
+    /// Bind a value to the given index
     pub fn bind(self: *Statement, index: usize, val: Value) !void {
         try self.vtable.bind(self.handle, index, val);
     }
 
+    /// Get the value of the given column
     pub fn column(self: *Statement, index: usize) !Value {
         return self.vtable.column(self.handle, index);
     }
 
+    /// Step the result set
     pub fn step(self: *Statement) !bool {
         return self.vtable.step(self.handle);
     }
 
+    /// Reset the statement to be executed again
     pub fn reset(self: *Statement) !void {
         try self.vtable.reset(self.handle);
     }
