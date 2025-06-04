@@ -376,7 +376,8 @@ pub const TwelveStep = struct {
             // 4. Create a new table with the desired schema
             try self.state.exec();
 
-            // TODO: 5. Copy data from the old table to the new table
+            // 5. Copy data from the old table to the new table
+            try self.copyData(ch);
 
             // 6. Drop the old table
             try self.db.schema().dropTable(self.table);
@@ -424,6 +425,37 @@ pub const TwelveStep = struct {
         }
 
         return error.ColumnNotFound;
+    }
+
+    fn copyData(self: *TwelveStep, change: TableChange) !void {
+        var buf = try SqlBuf.init(self.db.arena);
+        defer buf.deinit();
+
+        try buf.append("INSERT INTO ");
+        try buf.appendIdent(self.state.table);
+        try buf.append(" (");
+
+        for (self.state.columns.items, 0..) |col, i| {
+            if (i > 0) try buf.append(", ");
+            try buf.appendIdent(col.name);
+        }
+
+        try buf.append(") SELECT ");
+
+        for (self.state.columns.items, 0..) |col, i| {
+            if (i > 0) try buf.append(", ");
+
+            if (change == .rename_column and std.mem.eql(u8, col.name, change.rename_column[0])) {
+                try buf.appendIdent(change.rename_column[1]);
+            } else {
+                try buf.appendIdent(col.name);
+            }
+        }
+
+        try buf.append(" FROM ");
+        try buf.appendIdent(self.table);
+
+        try self.db.conn.execAll(buf.buf.items);
     }
 };
 
@@ -518,4 +550,71 @@ test "advanced create" {
 
     try schema.dropTable("department");
     try schema.dropTable("employee");
+}
+
+test "advanced alter" {
+    var db = try createDb("");
+    defer db.deinit();
+    const schema = db.schema();
+
+    // Create initial table
+    try schema.createTable("employee")
+        .id()
+        .column("name", .text, .{})
+        .exec();
+
+    // Add more columns
+    try schema.alterTable("employee")
+        .addColumn("department", .text, .{})
+        .addColumn("salary", .int, .{})
+        .exec();
+
+    // Few more changes
+    try schema.alterTable("employee")
+        // .addConstraint(.unique, "name")
+        .renameColumn("department", "team")
+        // .addCheck("salary > 0")
+        .exec();
+
+    // Check that it worked
+    try expectDdl(&db, "employee",
+        \\CREATE TABLE "employee" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  team TEXT NOT NULL,
+        \\  salary INTEGER NOT NULL,
+        \\  PRIMARY KEY (id)
+        \\) STRICT
+    );
+
+    // Now, let's extract department into its own table
+    try schema.createTable("department")
+        .id()
+        .column("name", .text, .{})
+        .exec();
+
+    // Add a foreign key
+    try schema.alterTable("employee")
+        .dropColumn("team")
+        .addColumn("department_id", .int, .{ .nullable = true })
+        // .addForeignKey("department_id", "department", "id")
+        .exec();
+
+    // And check again
+    try expectDdl(&db, "department",
+        \\CREATE TABLE "department" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  PRIMARY KEY (id)
+        \\) STRICT
+    );
+    try expectDdl(&db, "employee",
+        \\CREATE TABLE "employee" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  salary INTEGER NOT NULL,
+        \\  department_id INTEGER,
+        \\  PRIMARY KEY (id)
+        \\) STRICT
+    );
 }
