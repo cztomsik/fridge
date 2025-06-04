@@ -15,6 +15,20 @@ pub const SqlBuf = struct {
         self.buf.deinit();
     }
 
+    pub fn appendIdent(self: *SqlBuf, name: []const u8) !void {
+        try self.buf.append('"');
+
+        for (name) |char| {
+            if (char == '"') {
+                try self.buf.appendSlice("\"\"");
+            } else {
+                try self.buf.append(char);
+            }
+        }
+
+        try self.buf.append('"');
+    }
+
     pub fn append(self: *SqlBuf, x: anytype) std.mem.Allocator.Error!void {
         if (comptime std.meta.hasMethod(@TypeOf(x), "toSql")) {
             return x.toSql(self);

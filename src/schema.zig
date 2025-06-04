@@ -91,7 +91,7 @@ pub const TableBuilder = struct {
         // TODO: db.raw() should be flexible-enough for this
 
         try buf.append("CREATE TABLE ");
-        try buf.append(self.table);
+        try buf.appendIdent(self.table);
         try buf.append(" (\n  ");
 
         for (self.columns.items, 0..) |col, i| {
@@ -108,7 +108,7 @@ pub const TableBuilder = struct {
         try buf.append("\n) STRICT");
     }
 
-    pub fn exec(self: TableBuilder) !void {
+    pub fn exec(self: *TableBuilder) !void {
         var buf = try SqlBuf.init(self.db.arena);
         try buf.append(self);
         try self.db.conn.execAll(buf.buf.items);
@@ -153,20 +153,20 @@ pub const AlterBuilder = struct {
     }
 
     pub fn exec(self: *AlterBuilder) !void {
-        // const sqlite = std.mem.eql(u8, self.db.conn.kind(), "sqlite3");
+        const sqlite = std.mem.eql(u8, self.db.conn.kind(), "sqlite3");
+        const empty = false;
 
-        // if (sqlite and !empty) {
-        //     var tws = try TwelveStep.init(self.db, self.table);
-        //     for (self.changes.items) |ch| try tws.apply(ch);
-        //     try tws.exec();
-        // } else {
-        var buf = try SqlBuf.init(self.db.arena);
-        try buf.append(self);
-        try self.db.conn.execAll(buf.buf.items);
-        // }
+        if (sqlite and !empty) {
+            var tws = try TwelveStep.init(self.db, self.table, self.changes.items);
+            try tws.exec();
+        } else {
+            var buf = try SqlBuf.init(self.db.arena);
+            try buf.append(self);
+            try self.db.conn.execAll(buf.buf.items);
+        }
     }
 
-    pub fn toSql(self: *AlterBuilder, buf: *SqlBuf) !void {
+    pub fn toSql(self: AlterBuilder, buf: *SqlBuf) !void {
         for (self.changes.items, 0..) |ch, i| {
             if (i > 0) try buf.append(";\n");
 
@@ -329,6 +329,104 @@ pub const FkOptions = struct {
     on_update: FkAction = .no_action,
 };
 
+pub const TwelveStep = struct {
+    db: *Session,
+    table: []const u8,
+    changes: []const TableChange,
+    state: TableBuilder,
+
+    pub fn init(db: *Session, table: []const u8, changes: []const TableChange) !TwelveStep {
+        var state: TableBuilder = .{
+            .db = db,
+            .table = "temp123", // TODO
+        };
+
+        const cols = try db
+            .raw("SELECT name, lower(type) type, \"notnull\" not_null, dflt_value \"default\" FROM pragma_table_xinfo(?)", table)
+            .fetchAll(Column);
+
+        for (cols) |col| {
+            const pk = (try db.raw("SELECT pk FROM pragma_table_xinfo(?) WHERE name = ?", .{ table, col.name }).get(bool)).?;
+
+            _ = state.column(col.name, col.type, .{
+                .nullable = !col.not_null or pk,
+                .primary_key = pk,
+                .unique = false, // TODO
+            });
+        }
+
+        return .{
+            .db = db,
+            .table = table,
+            .changes = changes,
+            .state = state,
+        };
+    }
+
+    pub fn exec(self: *TwelveStep) !void {
+        // 1-2. Disable foreign_keys, start tx
+        // (to be handled by caller)
+
+        // 3. Remember indexes, triggers, and views
+        // const attached = try self.db.raw("SELECT sql FROM sqlite_schema WHERE tbl_name = ? AND type != 'table' AND name NOT LIKE 'sqlite_%'", self.table).pluck([]const u8);
+
+        for (self.changes) |ch| {
+            try self.applyChange(ch);
+
+            // 4. Create a new table with the desired schema
+            try self.state.exec();
+
+            // TODO: 5. Copy data from the old table to the new table
+
+            // 6. Drop the old table
+            try self.db.schema().dropTable(self.table);
+
+            // 7. Rename the new table to old table's name
+            try self.db.schema().renameTable("temp123", self.table); // TODO
+        }
+
+        // TODO: 8. Recreate indices, triggers, and views
+
+        // TODO: 9, 10, 11, 12
+
+        // 10. Run PRAGMA foreign_key_check
+        // TODO
+
+        // 11-12. Commit, re-enable foreign_keys
+        // (to be handled by caller)
+    }
+
+    fn applyChange(self: *TwelveStep, change: TableChange) !void {
+        switch (change) {
+            .add_column => |args| {
+                _ = self.state.column(args[0], args[1], args[2]);
+            },
+            .rename_column => |names| {
+                const i = try self.findColumn(names[0]);
+                self.state.columns.items[i].name = names[1];
+
+                // TODO: constraints?
+            },
+            .drop_column => |name| {
+                const i = try self.findColumn(name);
+                _ = self.state.columns.orderedRemove(i);
+
+                // TODO: constraints?
+            },
+        }
+    }
+
+    fn findColumn(self: *TwelveStep, name: []const u8) !usize {
+        for (self.state.columns.items, 0..) |col, i| {
+            if (std.mem.eql(u8, col.name, name)) {
+                return i;
+            }
+        }
+
+        return error.ColumnNotFound;
+    }
+};
+
 const t = std.testing;
 const createDb = @import("testing.zig").createDb;
 const expectSql = @import("testing.zig").expectSql;
@@ -346,7 +444,7 @@ test "basic create" {
         .exec();
 
     try expectDdl(&db, "person",
-        \\CREATE TABLE person (
+        \\CREATE TABLE "person" (
         \\  id INTEGER,
         \\  name TEXT NOT NULL,
         \\  age INTEGER NOT NULL,
@@ -373,7 +471,7 @@ test "basic alter" {
         .exec();
 
     try expectDdl(&db, "person",
-        \\CREATE TABLE person (
+        \\CREATE TABLE "person" (
         \\  id INTEGER,
         \\  name TEXT NOT NULL,
         \\  PRIMARY KEY (id)
@@ -401,7 +499,7 @@ test "advanced create" {
         .exec();
 
     try expectDdl(&db, "employee",
-        \\CREATE TABLE employee (
+        \\CREATE TABLE "employee" (
         \\  id INTEGER,
         \\  name TEXT NOT NULL,
         \\  department_id INTEGER NOT NULL,
@@ -411,7 +509,7 @@ test "advanced create" {
     );
 
     try expectDdl(&db, "department",
-        \\CREATE TABLE department (
+        \\CREATE TABLE "department" (
         \\  id INTEGER,
         \\  name TEXT NOT NULL,
         \\  PRIMARY KEY (id)
