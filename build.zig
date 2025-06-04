@@ -26,7 +26,8 @@ pub fn build(b: *std.Build) !void {
         });
     }
 
-    const tests = b.addTest(.{ .root_source_file = b.path("src/main.zig") });
+    const test_filter = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{};
+    const tests = b.addTest(.{ .root_source_file = b.path("src/main.zig"), .filters = test_filter });
     tests.root_module.link_libc = true;
     tests.root_module.link_objects = lib.link_objects;
     const run_tests = b.addRunArtifact(tests);
