@@ -23,12 +23,21 @@ pub const Schema = struct {
     }
 
     pub fn renameTable(self: Schema, old_name: []const u8, new_name: []const u8) !void {
-        const sql = try std.fmt.allocPrint(self.db.arena, "ALTER TABLE {s} RENAME TO {s}", .{ old_name, new_name });
-        try self.db.conn.execAll(sql);
+        var buf = try SqlBuf.init(self.db.arena);
+        try buf.append("ALTER TABLE ");
+        try buf.appendIdent(old_name);
+        try buf.append(" RENAME TO ");
+        try buf.appendIdent(new_name);
+
+        try self.db.conn.execAll(buf.buf.items);
     }
 
     pub fn dropTable(self: Schema, name: []const u8) !void {
-        try self.db.raw("DROP TABLE", {}).table(name).exec();
+        var buf = try SqlBuf.init(self.db.arena);
+        try buf.append("DROP TABLE ");
+        try buf.appendIdent(name);
+
+        try self.db.conn.execAll(buf.buf.items);
     }
 };
 
@@ -64,32 +73,26 @@ pub const TableBuilder = struct {
     }
 
     pub fn primaryKey(self: *TableBuilder, cols: []const u8) *TableBuilder {
-        return self.append("constraints", .{ .primary_key = cols });
+        return self.addConstraint(.primary_key, cols);
     }
 
     pub fn unique(self: *TableBuilder, cols: []const u8) *TableBuilder {
-        return self.append("constraints", .{ .unique = cols });
+        return self.addConstraint(.unique, cols);
     }
 
     pub fn check(self: *TableBuilder, expr: []const u8) *TableBuilder {
-        return self.append("constraints", .{ .check = expr });
+        return self.addConstraint(.check, expr);
     }
 
     pub fn foreignKey(self: *TableBuilder, cols: []const u8, table: []const u8, opts: FkOptions) *TableBuilder {
-        const fk: Fk = .{
-            .cols = cols,
-            .ref_table = table,
-            .ref_cols = opts.columns,
-            .on_delete = opts.on_delete,
-            .on_update = opts.on_update,
-        };
+        return self.addConstraint(.foreign_key, .init(cols, table, opts));
+    }
 
-        return self.append("constraints", .{ .foreign_key = fk });
+    pub fn addConstraint(self: *TableBuilder, comptime kind: std.meta.Tag(Constraint), body: @FieldType(Constraint, @tagName(kind))) *TableBuilder {
+        return self.append("constraints", @unionInit(Constraint, @tagName(kind), body));
     }
 
     pub fn toSql(self: TableBuilder, buf: *SqlBuf) !void {
-        // TODO: db.raw() should be flexible-enough for this
-
         try buf.append("CREATE TABLE ");
         try buf.appendIdent(self.table);
         try buf.append(" (\n  ");
@@ -127,13 +130,11 @@ pub const AlterBuilder = struct {
 
     pub fn addColumn(self: *AlterBuilder, name: []const u8, ctype: ColumnType, opts: ColumnOptions) *AlterBuilder {
         if (opts.primary_key) {
-            // TODO
-            // _ = self.addPrimaryKey(name);
+            _ = self.addPrimaryKey(name);
         }
 
         if (opts.unique) {
-            // TODO
-            // _ = self.addUnique(name);
+            _ = self.addUnique(name);
         }
 
         return self.append(.{ .add_column = .{ name, ctype, opts } });
@@ -145,6 +146,26 @@ pub const AlterBuilder = struct {
 
     pub fn dropColumn(self: *AlterBuilder, name: []const u8) *AlterBuilder {
         return self.append(.{ .drop_column = name });
+    }
+
+    pub fn addPrimaryKey(self: *AlterBuilder, cols: []const u8) *AlterBuilder {
+        return self.addConstraint(.primary_key, cols);
+    }
+
+    pub fn addUnique(self: *AlterBuilder, cols: []const u8) *AlterBuilder {
+        return self.addConstraint(.unique, cols);
+    }
+
+    pub fn addCheck(self: *AlterBuilder, expr: []const u8) *AlterBuilder {
+        return self.addConstraint(.check, expr);
+    }
+
+    pub fn addForeignKey(self: *AlterBuilder, cols: []const u8, table: []const u8, opts: FkOptions) *AlterBuilder {
+        return self.addConstraint(.foreign_key, .init(cols, table, opts));
+    }
+
+    pub fn addConstraint(self: *AlterBuilder, comptime kind: std.meta.Tag(Constraint), body: @FieldType(Constraint, @tagName(kind))) *AlterBuilder {
+        return self.append(.{ .add_constraint = @unionInit(Constraint, @tagName(kind), body) });
     }
 
     fn append(self: *AlterBuilder, change: TableChange) *AlterBuilder {
@@ -171,7 +192,7 @@ pub const AlterBuilder = struct {
             if (i > 0) try buf.append(";\n");
 
             try buf.append("ALTER TABLE ");
-            try buf.append(self.table);
+            try buf.appendIdent(self.table);
             try buf.append(" ");
             try buf.append(ch);
         }
@@ -182,12 +203,13 @@ pub const TableChange = union(enum) {
     add_column: struct { []const u8, ColumnType, ColumnOptions },
     rename_column: struct { []const u8, []const u8 },
     drop_column: []const u8,
+    add_constraint: Constraint,
 
     pub fn toSql(self: TableChange, buf: *SqlBuf) !void {
         switch (self) {
             .add_column => |opts| {
                 try buf.append("ADD COLUMN ");
-                try buf.append(opts[0]);
+                try buf.appendIdent(opts[0]);
                 try buf.append(" ");
                 try buf.append(opts[1]);
 
@@ -197,13 +219,17 @@ pub const TableChange = union(enum) {
             },
             .rename_column => |names| {
                 try buf.append("RENAME COLUMN ");
-                try buf.append(names[0]);
+                try buf.appendIdent(names[0]);
                 try buf.append(" TO ");
-                try buf.append(names[1]);
+                try buf.appendIdent(names[1]);
             },
             .drop_column => |name| {
                 try buf.append("DROP COLUMN ");
-                try buf.append(name);
+                try buf.appendIdent(name);
+            },
+            .add_constraint => |constraint| {
+                try buf.append("ADD CONSTRAINT ");
+                try buf.append(constraint);
             },
         }
     }
@@ -216,7 +242,7 @@ pub const Column = struct {
     default: ?[]const u8,
 
     pub fn toSql(self: Column, buf: *SqlBuf) !void {
-        try buf.append(self.name);
+        try buf.append(self.name); // TODO: should be appendIdent() but we probably don't want to quote unless necessary
         try buf.append(" ");
         try buf.append(self.type);
 
@@ -284,6 +310,16 @@ const Fk = struct {
     on_update: FkAction = .no_action,
     on_delete: FkAction = .no_action,
 
+    fn init(cols: []const u8, table: []const u8, opts: FkOptions) Fk {
+        return .{
+            .cols = cols,
+            .ref_table = table,
+            .ref_cols = opts.columns,
+            .on_delete = opts.on_delete,
+            .on_update = opts.on_update,
+        };
+    }
+
     pub fn toSql(self: Fk, buf: *SqlBuf) !void {
         try buf.append(" (");
         try buf.append(self.cols);
@@ -350,11 +386,16 @@ pub const TwelveStep = struct {
         for (cols) |col| {
             const pk = (try db.raw("SELECT pk FROM pragma_table_xinfo(?) WHERE name = ?", .{ table, col.name }).get(bool)).?;
 
+            // TODO: multi-col UNIQUE (a, b, ...)
+            const unique = try db.raw("SELECT count(*) FROM pragma_index_list(?) idx JOIN pragma_index_info(idx.name) col WHERE col.name = ?", .{ table, col.name }).get(bool) orelse false;
+
             _ = state.column(col.name, col.type, .{
                 .nullable = !col.not_null or pk,
                 .primary_key = pk,
-                .unique = false, // TODO
+                .unique = unique,
             });
+
+            // TODO: re-construct CHECK constraints (by parsing the original sql query)
         }
 
         return .{
@@ -420,6 +461,9 @@ pub const TwelveStep = struct {
 
                 // TODO: constraints?
             },
+            .add_constraint => |constraint| {
+                _ = self.state.append("constraints", constraint);
+            },
         }
     }
 
@@ -435,8 +479,6 @@ pub const TwelveStep = struct {
 
     fn copyData(self: *TwelveStep, change: TableChange) !void {
         var buf = try SqlBuf.init(self.db.arena);
-        defer buf.deinit();
-
         try buf.append("INSERT INTO ");
         try buf.appendIdent(self.state.table);
         try buf.append(" (");
@@ -589,9 +631,9 @@ test "advanced alter" {
 
     // Few more changes
     try schema.alterTable("employee")
-        // .addConstraint(.unique, "name")
+        .addConstraint(.unique, "name")
         .renameColumn("department", "team")
-        // .addCheck("salary > 0")
+        .addCheck("salary > 0")
         .exec();
 
     // Check that it worked
@@ -601,7 +643,9 @@ test "advanced alter" {
         \\  name TEXT NOT NULL,
         \\  team TEXT NOT NULL,
         \\  salary INTEGER NOT NULL,
-        \\  PRIMARY KEY (id)
+        \\  PRIMARY KEY (id),
+        \\  UNIQUE (name),
+        \\  CHECK (salary > 0)
         \\) STRICT
     );
 
@@ -615,7 +659,7 @@ test "advanced alter" {
     try schema.alterTable("employee")
         .dropColumn("team")
         .addColumn("department_id", .int, .{ .nullable = true })
-        // .addForeignKey("department_id", "department", "id")
+        .addForeignKey("department_id", "department", .{})
         .exec();
 
     // And check again
@@ -632,7 +676,10 @@ test "advanced alter" {
         \\  name TEXT NOT NULL,
         \\  salary INTEGER NOT NULL,
         \\  department_id INTEGER,
-        \\  PRIMARY KEY (id)
+        \\  PRIMARY KEY (id),
+        \\  UNIQUE (name),
+        // \\  CHECK (salary > 0)
+        \\  FOREIGN KEY (department_id) REFERENCES department (id)
         \\) STRICT
     );
 }
