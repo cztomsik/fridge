@@ -154,9 +154,9 @@ pub const AlterBuilder = struct {
 
     pub fn exec(self: *AlterBuilder) !void {
         const sqlite = std.mem.eql(u8, self.db.conn.kind(), "sqlite3");
-        const empty = false;
+        const needs_twelvestep = true; // TODO
 
-        if (sqlite and !empty) {
+        if (sqlite and needs_twelvestep) {
             var tws = try TwelveStep.init(self.db, self.table, self.changes.items);
             try tws.exec();
         } else {
@@ -335,10 +335,12 @@ pub const TwelveStep = struct {
     changes: []const TableChange,
     state: TableBuilder,
 
+    const TEMP_TABLE: []const u8 = "temp_alter_table";
+
     pub fn init(db: *Session, table: []const u8, changes: []const TableChange) !TwelveStep {
         var state: TableBuilder = .{
             .db = db,
-            .table = "temp123", // TODO
+            .table = TEMP_TABLE,
         };
 
         const cols = try db
@@ -368,8 +370,9 @@ pub const TwelveStep = struct {
         // (to be handled by caller)
 
         // 3. Remember indexes, triggers, and views
-        // const attached = try self.db.raw("SELECT sql FROM sqlite_schema WHERE tbl_name = ? AND type != 'table' AND name NOT LIKE 'sqlite_%'", self.table).pluck([]const u8);
+        const objs_to_restore = try self.db.raw("SELECT sql FROM sqlite_schema WHERE tbl_name = ? AND type != 'table' AND name NOT LIKE 'sqlite_%'", self.table).pluck([]const u8);
 
+        // We do 4-7 repeatedly, for each change. It's not very efficient, but it's easier to understand / implement correctly.
         for (self.changes) |ch| {
             try self.applyChange(ch);
 
@@ -383,15 +386,18 @@ pub const TwelveStep = struct {
             try self.db.schema().dropTable(self.table);
 
             // 7. Rename the new table to old table's name
-            try self.db.schema().renameTable("temp123", self.table); // TODO
+            try self.db.schema().renameTable(TEMP_TABLE, self.table);
         }
 
-        // TODO: 8. Recreate indices, triggers, and views
+        // 8-9. Recreate indices, triggers, and views
+        // (TODO: we might need to drop views first? Indices/triggers should be already gone at this point)
+        for (objs_to_restore) |sql| {
+            try self.db.conn.execAll(sql);
+        }
 
-        // TODO: 9, 10, 11, 12
-
-        // 10. Run PRAGMA foreign_key_check
-        // TODO
+        // 10. Run integrity checks
+        try self.db.conn.execAll("PRAGMA foreign_key_check");
+        try self.db.conn.execAll("PRAGMA integrity_check");
 
         // 11-12. Commit, re-enable foreign_keys
         // (to be handled by caller)
@@ -435,21 +441,33 @@ pub const TwelveStep = struct {
         try buf.appendIdent(self.state.table);
         try buf.append(" (");
 
-        for (self.state.columns.items, 0..) |col, i| {
+        var i: usize = 0;
+        for (self.state.columns.items) |col| {
+            if (change == .add_column and std.mem.eql(u8, col.name, change.add_column[0])) {
+                continue;
+            }
+
             if (i > 0) try buf.append(", ");
             try buf.appendIdent(col.name);
+            i += 1;
         }
 
         try buf.append(") SELECT ");
 
-        for (self.state.columns.items, 0..) |col, i| {
-            if (i > 0) try buf.append(", ");
-
-            if (change == .rename_column and std.mem.eql(u8, col.name, change.rename_column[0])) {
-                try buf.appendIdent(change.rename_column[1]);
-            } else {
-                try buf.appendIdent(col.name);
+        var j: usize = 0;
+        for (self.state.columns.items) |col| {
+            if (change == .add_column and std.mem.eql(u8, col.name, change.add_column[0])) {
+                continue;
             }
+
+            const col_name = if (change == .rename_column and std.mem.eql(u8, col.name, change.rename_column[1]))
+                change.rename_column[0]
+            else
+                col.name;
+
+            if (j > 0) try buf.append(", ");
+            try buf.appendIdent(col_name);
+            j += 1;
         }
 
         try buf.append(" FROM ");
@@ -617,4 +635,49 @@ test "advanced alter" {
         \\  PRIMARY KEY (id)
         \\) STRICT
     );
+}
+
+test "data migration" {
+    var db = try createDb("");
+    defer db.deinit();
+    const schema = db.schema();
+
+    // Create initial table with data
+    try schema.createTable("contacts")
+        .id()
+        .column("name", .text, .{})
+        .column("phone", .text, .{})
+        .exec();
+
+    // Insert some test data
+    try db.raw("INSERT INTO contacts (name, phone) VALUES (?, ?)", .{ "Alice", "555-1234" }).exec();
+    try db.raw("INSERT INTO contacts (name, phone) VALUES (?, ?)", .{ "Bob", "555-5678" }).exec();
+
+    // Perform schema changes
+    try schema.alterTable("contacts")
+        .addColumn("email", .text, .{ .nullable = true })
+        .renameColumn("phone", "phone_number")
+        .exec();
+
+    // Verify the schema changes
+    try expectDdl(&db, "contacts",
+        \\CREATE TABLE "contacts" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  phone_number TEXT NOT NULL,
+        \\  email TEXT,
+        \\  PRIMARY KEY (id)
+        \\) STRICT
+    );
+
+    // Verify the data was preserved
+    const alice = try db.raw("SELECT * FROM contacts WHERE name = ?", "Alice").fetchOne(struct {
+        id: u32,
+        name: []const u8,
+        phone_number: []const u8,
+        email: ?[]const u8,
+    });
+    try t.expectEqualStrings("Alice", alice.?.name);
+    try t.expectEqualStrings("555-1234", alice.?.phone_number);
+    try t.expectEqual(@as(?[]const u8, null), alice.?.email);
 }
