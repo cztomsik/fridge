@@ -104,9 +104,14 @@ pub const TableBuilder = struct {
             try buf.append(col);
         }
 
-        for (self.constraints.items) |con| {
-            try buf.append(",\n  ");
-            try buf.append(con);
+        // Fixed order
+        for (std.meta.tags(std.meta.Tag(Constraint))) |tag| {
+            for (self.constraints.items) |con| {
+                if (std.meta.activeTag(con) == tag) {
+                    try buf.append(",\n  ");
+                    try buf.append(con);
+                }
+            }
         }
 
         if (self.db.conn.dialect() == .sqlite3) {
@@ -758,8 +763,8 @@ test "advanced alter" {
         \\  PRIMARY KEY (id),
         \\  UNIQUE (name),
         \\  CHECK (salary > 0),
-        \\  FOREIGN KEY (department_id) REFERENCES department (id),
-        \\  CHECK (salary < 100000)
+        \\  CHECK (salary < 100000),
+        \\  FOREIGN KEY (department_id) REFERENCES department (id)
         \\) STRICT
     );
 }
