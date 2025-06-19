@@ -7,9 +7,11 @@ pub const Connection = struct {
     handle: *anyopaque,
     vtable: *const VTable(*anyopaque),
 
+    pub const Dialect = enum { sqlite3, other };
+
     pub fn VTable(comptime H: type) type {
         return struct {
-            kind: *const fn (self: H) []const u8,
+            dialect: *const fn (self: H) Dialect,
             execAll: *const fn (self: H, sql: []const u8) Error!void,
             prepare: *const fn (self: H, sql: []const u8) Error!Statement,
             rowsAffected: *const fn (self: H) Error!usize,
@@ -23,8 +25,8 @@ pub const Connection = struct {
         return util.upcast(try T.open(allocator, options), Connection);
     }
 
-    pub fn kind(self: Connection) []const u8 {
-        return self.vtable.kind(self.handle);
+    pub fn dialect(self: Connection) Dialect {
+        return self.vtable.dialect(self.handle);
     }
 
     /// Executes all SQL statements in the given string.

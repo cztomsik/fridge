@@ -85,8 +85,8 @@ pub const SQLite3 = opaque {
         }
     }
 
-    pub fn kind(_: *SQLite3) []const u8 {
-        return "sqlite3";
+    pub fn dialect(_: *SQLite3) Connection.Dialect {
+        return .sqlite3;
     }
 
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {

@@ -1,4 +1,5 @@
 const std = @import("std");
+const Connection = @import("connection.zig").Connection;
 const Session = @import("session.zig").Session;
 const Statement = @import("statement.zig").Statement;
 const SqlBuf = @import("sql.zig").SqlBuf;
@@ -45,7 +46,7 @@ pub const TestConn = struct {
         return ptr;
     }
 
-    pub fn kind(_: *TestConn) []const u8 {
+    pub fn dialect(_: *TestConn) Connection.Dialect {
         unreachable;
     }
 
