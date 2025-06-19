@@ -1,4 +1,5 @@
 const std = @import("std");
+const util = @import("util.zig");
 const Session = @import("session.zig").Session;
 const RawQuery = @import("raw.zig").Query;
 const SqlBuf = @import("sql.zig").SqlBuf;
@@ -107,8 +108,9 @@ pub const TableBuilder = struct {
             try buf.append(con);
         }
 
-        // TODO: if (self.dialect == .sqlite) or something like that
-        try buf.append("\n) STRICT");
+        if (self.db.conn.dialect() == .sqlite3) {
+            try buf.append("\n) STRICT");
+        }
     }
 
     pub fn exec(self: *TableBuilder) !void {
@@ -168,13 +170,15 @@ pub const AlterBuilder = struct {
         return self.append(.{ .add_constraint = @unionInit(Constraint, @tagName(kind), body) });
     }
 
+    // TODO: dropPrimaryKey, dropUnique, dropCheck, dropForeignKey
+
     fn append(self: *AlterBuilder, change: TableChange) *AlterBuilder {
         self.changes.append(self.db.arena, change) catch @panic("OOM");
         return self;
     }
 
     pub fn exec(self: *AlterBuilder) !void {
-        const sqlite = std.mem.eql(u8, self.db.conn.kind(), "sqlite3");
+        const sqlite = self.db.conn.dialect() == .sqlite3;
         const needs_twelvestep = true; // TODO
 
         if (sqlite and needs_twelvestep) {
@@ -284,6 +288,22 @@ pub const Constraint = union(enum) {
     check: []const u8,
     foreign_key: Fk,
 
+    fn refersOnly(self: Constraint, col: []const u8) bool {
+        const cols = switch (self) {
+            inline else => |body| body,
+            .foreign_key => |fk| fk.cols,
+        };
+
+        if (std.mem.eql(u8, cols, col)) {
+            return true;
+        }
+
+        // CHECK xxx <op> xxx
+        return util.isSimpleExpr(cols) and
+            cols.len > col.len and cols[col.len] == ' ' and
+            std.mem.startsWith(u8, cols, col);
+    }
+
     pub fn toSql(self: Constraint, buf: *SqlBuf) !void {
         try buf.append(switch (self) {
             .primary_key => "PRIMARY KEY",
@@ -379,24 +399,39 @@ pub const TwelveStep = struct {
             .table = TEMP_TABLE,
         };
 
+        const sql = try db
+            .raw("SELECT sql FROM sqlite_master WHERE tbl_name = ?", table)
+            .get([]const u8) orelse return error.NotFound;
+
         const cols = try db
             .raw("SELECT name, lower(type) type, \"notnull\" not_null, dflt_value \"default\" FROM pragma_table_xinfo(?)", table)
             .fetchAll(Column);
 
         for (cols) |col| {
-            const pk = (try db.raw("SELECT pk FROM pragma_table_xinfo(?) WHERE name = ?", .{ table, col.name }).get(bool)).?;
-
-            // TODO: multi-col UNIQUE (a, b, ...)
-            const unique = try db.raw("SELECT count(*) FROM pragma_index_list(?) idx JOIN pragma_index_info(idx.name) col WHERE col.name = ?", .{ table, col.name }).get(bool) orelse false;
-
-            _ = state.column(col.name, col.type, .{
-                .nullable = !col.not_null or pk,
-                .primary_key = pk,
-                .unique = unique,
-            });
-
-            // TODO: re-construct CHECK constraints (by parsing the original sql query)
+            _ = state.append("columns", col);
         }
+
+        // PRIMARY KEY
+        if (try db.raw("SELECT group_concat(name, ',') FROM pragma_table_xinfo(?) WHERE pk = 1", table).get([]const u8)) |pk_cols| {
+            _ = state.addConstraint(.primary_key, pk_cols);
+        }
+
+        // UNIQUE
+        for (try db.raw("SELECT group_concat(c.name, ',') FROM pragma_index_list(?) i JOIN pragma_index_info(i.name) c WHERE i.\"unique\" = 1 GROUP BY i.name", table).fetchAll([]const u8)) |uq_cols| {
+            _ = state.addConstraint(.unique, uq_cols);
+        }
+
+        // CHECK (parse from the original CREATE TABLE)
+        var pos: usize = 0;
+        while (std.mem.indexOfPos(u8, sql, pos, "CHECK (")) |i| {
+            const eol = std.mem.indexOfScalarPos(u8, sql, i, '\n') orelse return error.InvalidCheck;
+            const line = sql[i + 7 .. eol];
+            const end = std.mem.lastIndexOfScalar(u8, line, ')') orelse return error.InvalidCheck;
+            _ = state.addConstraint(.check, line[0..end]);
+            pos += eol;
+        }
+
+        // TODO: FOREIGN KEY
 
         return .{
             .db = db,
@@ -430,7 +465,7 @@ pub const TwelveStep = struct {
             try self.db.schema().renameTable(TEMP_TABLE, self.table);
         }
 
-        // 8-9. Recreate indices, triggers, and views
+        // 8-9. Recreate indices (except auto), triggers, and views
         // (TODO: we might need to drop views first? Indices/triggers should be already gone at this point)
         for (objs_to_restore) |sql| {
             try self.db.conn.execAll(sql);
@@ -459,7 +494,11 @@ pub const TwelveStep = struct {
                 const i = try self.findColumn(name);
                 _ = self.state.columns.orderedRemove(i);
 
-                // TODO: constraints?
+                for (self.state.constraints.items, 0..) |constraint, j| {
+                    if (constraint.refersOnly(name)) {
+                        _ = self.state.constraints.orderedRemove(j);
+                    }
+                }
             },
             .add_constraint => |constraint| {
                 _ = self.state.append("constraints", constraint);
@@ -678,7 +717,7 @@ test "advanced alter" {
         \\  department_id INTEGER,
         \\  PRIMARY KEY (id),
         \\  UNIQUE (name),
-        // \\  CHECK (salary > 0)
+        \\  CHECK (salary > 0),
         \\  FOREIGN KEY (department_id) REFERENCES department (id)
         \\) STRICT
     );
