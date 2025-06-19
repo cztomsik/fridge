@@ -1,5 +1,6 @@
 const std = @import("std");
 const util = @import("util.zig");
+const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
 const RawQuery = @import("raw.zig").Query;
 const SqlBuf = @import("sql.zig").SqlBuf;
@@ -368,6 +369,22 @@ pub const FkAction = enum {
     restrict,
     no_action,
 
+    pub fn fromValue(v: Value, _: std.mem.Allocator) !FkAction {
+        switch (v) {
+            .string => |str| {
+                if (str.len <= 11) {
+                    var buf: [11]u8 = undefined;
+                    const name = std.ascii.lowerString(&buf, str);
+                    std.mem.replaceScalar(u8, name, ' ', '_');
+                    return std.meta.stringToEnum(FkAction, name) orelse error.InvalidEnumTag;
+                }
+            },
+            else => {},
+        }
+
+        return error.InvalidEnumTag;
+    }
+
     pub fn toSql(self: FkAction, buf: *SqlBuf) !void {
         try buf.append(switch (self) {
             .set_null => "SET NULL",
@@ -431,7 +448,11 @@ pub const TwelveStep = struct {
             pos += eol;
         }
 
-        // TODO: FOREIGN KEY
+        // FOREIGN KEY
+        // TODO: multi-col?
+        for (try db.raw("SELECT \"from\" cols, \"table\" ref_table, \"to\" ref_cols, on_update, on_delete FROM pragma_foreign_key_list(?)", table).fetchAll(Fk)) |fk| {
+            _ = state.addConstraint(.foreign_key, fk);
+        }
 
         return .{
             .db = db,
@@ -719,6 +740,26 @@ test "advanced alter" {
         \\  UNIQUE (name),
         \\  CHECK (salary > 0),
         \\  FOREIGN KEY (department_id) REFERENCES department (id)
+        \\) STRICT
+    );
+
+    // Add extra check
+    try schema.alterTable("employee")
+        .addCheck("salary < 100000")
+        .exec();
+
+    // Check again
+    try expectDdl(&db, "employee",
+        \\CREATE TABLE "employee" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  salary INTEGER NOT NULL,
+        \\  department_id INTEGER,
+        \\  PRIMARY KEY (id),
+        \\  UNIQUE (name),
+        \\  CHECK (salary > 0),
+        \\  FOREIGN KEY (department_id) REFERENCES department (id),
+        \\  CHECK (salary < 100000)
         \\) STRICT
     );
 }
