@@ -123,8 +123,8 @@ fn PoolConnection(comptime T: type) type {
             };
         }
 
-        pub fn kind(self: *PoolConn) []const u8 {
-            return self.conn.kind();
+        pub fn dialect(self: *PoolConn) Connection.Dialect {
+            return self.conn.dialect();
         }
 
         pub fn execAll(self: *PoolConn, sql: []const u8) !void {

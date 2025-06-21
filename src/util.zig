@@ -11,18 +11,20 @@ pub const log = if (builtin.is_test) struct { // zig build test captures stderr 
     }
 } else std.log.scoped(.fridge);
 
+pub fn isSimpleExpr(expr: []const u8) bool {
+    return std.mem.indexOfScalar(u8, expr, '(') == null and
+        std.mem.indexOf(u8, expr, "->") == null and
+        std.mem.indexOf(u8, expr, "AND") == null and
+        std.mem.indexOf(u8, expr, "OR") == null;
+}
+
 // TODO: if we ever want to remap fields, this is the place
 pub fn ColType(comptime T: type, comptime expr: []const u8) type {
     if (@hasField(T, expr)) {
         return @FieldType(T, expr);
     }
 
-    const inferable =
-        expr[expr.len - 1] == '?' and
-        std.mem.indexOfScalar(u8, expr, '(') == null and
-        std.mem.indexOf(u8, expr, "->") == null and
-        std.mem.indexOf(u8, expr, "AND") == null and
-        std.mem.indexOf(u8, expr, "OR") == null;
+    const inferable = expr[expr.len - 1] == '?' and isSimpleExpr(expr);
 
     if (inferable) {
         if (std.mem.indexOfScalar(u8, expr, ' ')) |i| {
