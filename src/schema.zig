@@ -176,7 +176,21 @@ pub const AlterBuilder = struct {
         return self.append(.{ .add_constraint = @unionInit(Constraint, @tagName(kind), body) });
     }
 
-    // TODO: dropPrimaryKey, dropUnique, dropCheck, dropForeignKey
+    pub fn dropPrimaryKey(self: *AlterBuilder) *AlterBuilder {
+        return self.append(.{ .drop_constraint = .{ .primary_key = {} } });
+    }
+
+    pub fn dropUnique(self: *AlterBuilder, cols: []const u8) *AlterBuilder {
+        return self.append(.{ .drop_constraint = .{ .unique = cols } });
+    }
+
+    pub fn dropCheck(self: *AlterBuilder, expr: []const u8) *AlterBuilder {
+        return self.append(.{ .drop_constraint = .{ .check = expr } });
+    }
+
+    pub fn dropForeignKey(self: *AlterBuilder, cols: []const u8) *AlterBuilder {
+        return self.append(.{ .drop_constraint = .{ .foreign_key = cols } });
+    }
 
     fn append(self: *AlterBuilder, change: TableChange) *AlterBuilder {
         self.changes.append(self.db.arena, change) catch @panic("OOM");
@@ -214,6 +228,12 @@ pub const TableChange = union(enum) {
     rename_column: struct { []const u8, []const u8 },
     drop_column: []const u8,
     add_constraint: Constraint,
+    drop_constraint: union(enum) {
+        primary_key,
+        unique: []const u8,
+        check: []const u8,
+        foreign_key: []const u8,
+    },
 
     pub fn toSql(self: TableChange, buf: *SqlBuf) !void {
         switch (self) {
@@ -240,6 +260,27 @@ pub const TableChange = union(enum) {
             .add_constraint => |constraint| {
                 try buf.append("ADD CONSTRAINT ");
                 try buf.append(constraint);
+            },
+            .drop_constraint => |drop| {
+                try buf.append("DROP CONSTRAINT ");
+                switch (drop) {
+                    .primary_key => try buf.append("PRIMARY KEY"),
+                    .unique => |name| {
+                        try buf.append("UNIQUE (");
+                        try buf.append(name);
+                        try buf.append(")");
+                    },
+                    .check => |expr| {
+                        try buf.append("CHECK (");
+                        try buf.append(expr);
+                        try buf.append(")");
+                    },
+                    .foreign_key => |cols| {
+                        try buf.append("FOREIGN KEY (");
+                        try buf.append(cols);
+                        try buf.append(")");
+                    },
+                }
             },
         }
     }
@@ -529,6 +570,23 @@ pub const TwelveStep = struct {
             .add_constraint => |constraint| {
                 _ = self.state.append("constraints", constraint);
             },
+            .drop_constraint => |drop| {
+                var i: usize = 0;
+                while (i < self.state.constraints.items.len) {
+                    const constraint = self.state.constraints.items[i];
+                    const should_drop = switch (drop) {
+                        .primary_key => constraint == .primary_key,
+                        .unique => |cols| constraint == .unique and std.mem.eql(u8, constraint.unique, cols),
+                        .check => |expr| constraint == .check and std.mem.eql(u8, constraint.check, expr),
+                        .foreign_key => |cols| constraint == .foreign_key and std.mem.eql(u8, constraint.foreign_key.cols, cols),
+                    };
+                    if (should_drop) {
+                        _ = self.state.constraints.orderedRemove(i);
+                    } else {
+                        i += 1;
+                    }
+                }
+            },
         }
     }
 
@@ -812,4 +870,156 @@ test "data migration" {
     try t.expectEqualStrings("Alice", alice.?.name);
     try t.expectEqualStrings("555-1234", alice.?.phone_number);
     try t.expectEqual(@as(?[]const u8, null), alice.?.email);
+}
+
+test "drop constraints" {
+    var db = try createDb("");
+    defer db.deinit();
+    const schema = db.schema();
+
+    // Create initial table
+    try schema.createTable("employee")
+        .id()
+        .column("name", .text, .{ .unique = true })
+        .column("age", .int, .{})
+        .column("department_id", .int, .{})
+        .check("age > 0")
+        .foreignKey("department_id", "department", .{})
+        .exec();
+
+    try schema.createTable("department")
+        .id()
+        .column("name", .text, .{})
+        .exec();
+
+    // Check
+    try expectDdl(&db, "employee",
+        \\CREATE TABLE "employee" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  age INTEGER NOT NULL,
+        \\  department_id INTEGER NOT NULL,
+        \\  PRIMARY KEY (id),
+        \\  UNIQUE (name),
+        \\  CHECK (age > 0),
+        \\  FOREIGN KEY (department_id) REFERENCES department (id)
+        \\) STRICT
+    );
+
+    // Drop UNIQUE
+    try schema.alterTable("employee")
+        .dropUnique("name")
+        .exec();
+
+    // Check
+    try expectDdl(&db, "employee",
+        \\CREATE TABLE "employee" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  age INTEGER NOT NULL,
+        \\  department_id INTEGER NOT NULL,
+        \\  PRIMARY KEY (id),
+        \\  CHECK (age > 0),
+        \\  FOREIGN KEY (department_id) REFERENCES department (id)
+        \\) STRICT
+    );
+
+    // Drop CHECK
+    try schema.alterTable("employee")
+        .dropCheck("age > 0")
+        .exec();
+
+    // Check
+    try expectDdl(&db, "employee",
+        \\CREATE TABLE "employee" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  age INTEGER NOT NULL,
+        \\  department_id INTEGER NOT NULL,
+        \\  PRIMARY KEY (id),
+        \\  FOREIGN KEY (department_id) REFERENCES department (id)
+        \\) STRICT
+    );
+
+    // Drop FOREIGN KEY
+    try schema.alterTable("employee")
+        .dropForeignKey("department_id")
+        .exec();
+
+    // Check
+    try expectDdl(&db, "employee",
+        \\CREATE TABLE "employee" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  age INTEGER NOT NULL,
+        \\  department_id INTEGER NOT NULL,
+        \\  PRIMARY KEY (id)
+        \\) STRICT
+    );
+
+    // Drop PRIMARY KEY
+    try schema.alterTable("employee")
+        .dropPrimaryKey()
+        .exec();
+
+    // Check
+    try expectDdl(&db, "employee",
+        \\CREATE TABLE "employee" (
+        \\  id INTEGER,
+        \\  name TEXT NOT NULL,
+        \\  age INTEGER NOT NULL,
+        \\  department_id INTEGER NOT NULL
+        \\) STRICT
+    );
+}
+
+test "drop multiple constraints at once" {
+    var db = try createDb("");
+    defer db.deinit();
+    const schema = db.schema();
+
+    // Create initial table
+    try schema.createTable("user")
+        .id()
+        .column("email", .text, .{ .unique = true })
+        .column("age", .int, .{})
+        .column("status", .text, .{})
+        .check("age >= 18")
+        .check("status IN ('active', 'inactive')")
+        .unique("email,status")
+        .exec();
+
+    // Check
+    try expectDdl(&db, "user",
+        \\CREATE TABLE "user" (
+        \\  id INTEGER,
+        \\  email TEXT NOT NULL,
+        \\  age INTEGER NOT NULL,
+        \\  status TEXT NOT NULL,
+        \\  PRIMARY KEY (id),
+        \\  UNIQUE (email),
+        \\  UNIQUE (email,status),
+        \\  CHECK (age >= 18),
+        \\  CHECK (status IN ('active', 'inactive'))
+        \\) STRICT
+    );
+
+    // Drop multiple
+    try schema.alterTable("user")
+        .dropUnique("email")
+        .dropCheck("age >= 18")
+        .dropUnique("email,status")
+        .exec();
+
+    // Check
+    try expectDdl(&db, "user",
+        \\CREATE TABLE "user" (
+        \\  id INTEGER,
+        \\  email TEXT NOT NULL,
+        \\  age INTEGER NOT NULL,
+        \\  status TEXT NOT NULL,
+        \\  PRIMARY KEY (id),
+        \\  CHECK (status IN ('active', 'inactive'))
+        \\) STRICT
+    );
 }
