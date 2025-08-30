@@ -19,7 +19,7 @@ pub const PoolOptions = struct {
 /// referenced when `deinit()` is being called - it will just fail.
 pub fn Pool(comptime T: type) type {
     return struct {
-        conns: std.ArrayList(PoolConnection(T)),
+        conns: std.array_list.Managed(PoolConnection(T)),
         conn_opts: T.Options,
         mutex: std.Thread.Mutex = .{},
         wait: std.Thread.Condition = .{},
@@ -199,7 +199,7 @@ const Runner = struct {
     fn run(self: *Runner) !void {
         var count: usize = 0;
         while (self.pool.getConnection()) |conn| : (count += 1) {
-            std.time.sleep(count % 10 * 10 * std.time.ns_per_ms);
+            std.Thread.sleep(count % 10 * 10 * std.time.ns_per_ms);
             conn.deinit();
         } else |e| return switch (e) {
             error.PoolClosing => {},
@@ -221,7 +221,7 @@ test "Thread safety" {
         .thread = try std.Thread.spawn(.{}, Runner.run, .{r}),
     };
 
-    std.time.sleep(500 * std.time.ns_per_ms);
+    std.Thread.sleep(500 * std.time.ns_per_ms);
     pool.deinit();
     for (runners) |r| r.thread.join();
 

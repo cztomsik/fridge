@@ -5,10 +5,10 @@ const util = @import("util.zig");
 //       the lowest level and it's directly used by the raw query builder, we
 //       could also do some dialect translation here.
 pub const SqlBuf = struct {
-    buf: std.ArrayList(u8),
+    buf: std.array_list.Managed(u8),
 
     pub fn init(allocator: std.mem.Allocator) !SqlBuf {
-        return .{ .buf = try std.ArrayList(u8).initCapacity(allocator, 1024) };
+        return .{ .buf = try .initCapacity(allocator, 1024) };
     }
 
     pub fn deinit(self: *SqlBuf) void {

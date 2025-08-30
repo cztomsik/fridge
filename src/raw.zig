@@ -194,7 +194,7 @@ pub const Query = struct {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        var res = std.ArrayList(R).init(self.db.arena);
+        var res = std.array_list.Managed(R).init(self.db.arena);
         errdefer res.deinit();
 
         while (try stmt.next(struct { R }, self.db.arena)) |row| {
@@ -215,7 +215,7 @@ pub const Query = struct {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        var res = std.ArrayList(R).init(self.db.arena);
+        var res = std.array_list.Managed(R).init(self.db.arena);
         errdefer res.deinit();
 
         while (try stmt.next(R, self.db.arena)) |row| {
