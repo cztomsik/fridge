@@ -69,7 +69,7 @@ pub const SQLite3 = opaque {
                     // NOTE: Statically linked extensions should be compiled with -DSQLITE_CORE,
                     //       in which case the sqlite3_api_routines parameter is unused.
                     //       see https://github.com/sqlite/sqlite/blob/eaa50b866075f4c1a19065600e4f1bae059eb505/src/sqlite3ext.h#L712
-                    const init: *const fn (*c.sqlite3, *?[*:0]const u8, *const c.sqlite3_api_routines) callconv(.C) c_int = @ptrCast(@alignCast(p));
+                    const init: *const fn (*c.sqlite3, *?[*:0]const u8, *const c.sqlite3_api_routines) callconv(.c) c_int = @ptrCast(@alignCast(p));
                     return check(init(self.ptr(), &err, undefined));
                 }
             },
