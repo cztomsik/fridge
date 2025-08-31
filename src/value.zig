@@ -32,7 +32,7 @@ pub const Value = union(enum) {
             .@"enum" => from(if (comptime util.isDense(T)) @tagName(val) else @as(u32, @intFromEnum(val)), arena),
             else => {
                 if (comptime util.isJsonRepresentable(T)) {
-                    return .{ .string = try std.json.stringifyAlloc(arena, val, .{}) };
+                    return .{ .string = try std.fmt.allocPrint(arena, "{f}", .{std.json.fmt(val, .{})}) };
                 }
 
                 @compileError("TODO: " ++ @typeName(T));
