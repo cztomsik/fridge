@@ -42,14 +42,12 @@ pub const Session = struct {
     }
 
     pub fn prepare(self: *Session, sql: []const u8, args: anytype) !Statement {
-        var stmt: Statement = try self.conn.prepare(sql);
-        errdefer stmt.deinit();
-
+        const values = try self.arena.alloc(Value, args.len);
         inline for (0..args.len) |i| {
-            try stmt.bind(i, try Value.from(args[i], self.arena));
+            values[i] = try Value.from(args[i], self.arena);
         }
 
-        return stmt;
+        return self.conn.prepare(sql, values);
     }
 
     // TODO: begin/commit/rollback via self.conn.execAll(...)?

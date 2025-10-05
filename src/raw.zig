@@ -32,10 +32,14 @@ const Part = struct {
         try buf.append(self.sql);
     }
 
-    fn bind(self: Part, stmt: anytype, i: *usize) !void {
-        if (self.prev) |p| try p.bind(stmt, i);
+    fn countArgs(self: Part) usize {
+        const prev_count = if (self.prev) |p| p.countArgs() else 0;
+        return prev_count + self.args.count();
+    }
 
-        try self.args.bind(stmt, i);
+    fn collectArgsInto(self: Part, buf: *std.ArrayList(Value)) void {
+        if (self.prev) |p| p.collectArgsInto(buf);
+        self.args.collectInto(buf);
     }
 };
 
@@ -247,16 +251,16 @@ pub const Query = struct {
         var buf = try SqlBuf.init(self.db.arena);
         try buf.append(self);
 
-        var stmt = try self.db.conn.prepare(buf.buf.items);
-        errdefer stmt.deinit();
+        var args: std.ArrayList(Value) = .empty;
 
-        var i: usize = 0;
-        if (self.parts.head) |p| try p.bind(&stmt, &i);
-        if (self.parts.tables) |t| try t.bind(&stmt, &i);
-        if (self.parts.where) |w| try w.bind(&stmt, &i);
-        if (self.parts.tail) |t| try t.bind(&stmt, &i);
+        inline for (std.meta.fields(@TypeOf(self.parts))) |f| {
+            if (@field(self.parts, f.name)) |p| {
+                try args.ensureUnusedCapacity(self.db.arena, p.countArgs());
+                p.collectArgsInto(&args);
+            }
+        }
 
-        return stmt;
+        return self.db.conn.prepare(buf.buf.items, args.items);
     }
 
     pub fn append(self: Query, kind: Part.Kind, sql: []const u8, args: Args) Query {
@@ -307,11 +311,25 @@ const Args = union(enum) {
         return .{ .many = res };
     }
 
-    fn bind(self: Args, stmt: anytype, i: *usize) !void {
+    fn count(self: Args) usize {
+        return switch (self) {
+            .none => 0,
+            .one => 1,
+            .many => |args| args.len,
+        };
+    }
+
+    fn collectInto(self: Args, buf: *std.ArrayList(Value)) void {
         switch (self) {
             .none => {},
-            .one => |arg| try arg.bind(stmt, i),
-            .many => |args| for (args) |arg| try arg.bind(stmt, i),
+            .one => |arg| {
+                buf.appendAssumeCapacity(arg);
+            },
+            .many => |args| {
+                for (args) |arg| {
+                    buf.appendAssumeCapacity(arg);
+                }
+            },
         }
     }
 };

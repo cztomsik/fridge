@@ -67,6 +67,13 @@ pub const Statement = extern struct {
         try self.vtable.bind(self.handle, index, val);
     }
 
+    /// Bind all values to the statement
+    pub fn bindAll(self: *Statement, args: []const Value) !void {
+        for (args, 0..) |val, i| {
+            try self.bind(i, val);
+        }
+    }
+
     /// Get the value of the given column
     pub fn column(self: *Statement, index: usize) !Value {
         return self.vtable.column(self.handle, index);

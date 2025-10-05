@@ -1,6 +1,7 @@
 const std = @import("std");
 const util = @import("util.zig");
 const Statement = @import("statement.zig").Statement;
+const Value = @import("value.zig").Value;
 const Error = @import("error.zig").Error;
 
 pub const Connection = struct {
@@ -13,7 +14,7 @@ pub const Connection = struct {
         return struct {
             dialect: *const fn (self: H) Dialect,
             execAll: *const fn (self: H, sql: []const u8) Error!void,
-            prepare: *const fn (self: H, sql: []const u8) Error!Statement,
+            prepare: *const fn (self: H, sql: []const u8, params: []const Value) Error!Statement,
             rowsAffected: *const fn (self: H) Error!usize,
             lastInsertRowId: *const fn (self: H) Error!i64,
             lastError: *const fn (self: H) []const u8,
@@ -39,13 +40,13 @@ pub const Connection = struct {
     }
 
     /// Creates a prepared statement from the given SQL.
-    pub fn prepare(self: Connection, sql: []const u8) Error!Statement {
+    pub fn prepare(self: Connection, sql: []const u8, params: []const Value) Error!Statement {
         errdefer {
             util.log.debug("{s}", .{self.lastError()});
             util.log.debug("Failed to prepare SQL: {s}\n", .{sql});
         }
 
-        return self.vtable.prepare(self.handle, sql);
+        return self.vtable.prepare(self.handle, sql, params);
     }
 
     /// Returns the number of rows modified by the last INSERT/UPDATE/DELETE.
