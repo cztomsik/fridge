@@ -197,9 +197,30 @@ pub const AlterBuilder = struct {
         return self;
     }
 
+    fn needsTwelveStep(self: AlterBuilder) bool {
+        for (self.changes.items) |change| {
+            switch (change) {
+                .add_column => |opts| {
+                    if (!opts[2].nullable and opts[2].default == null) {
+                        return true;
+                    }
+                },
+                .rename_column => {
+                    continue;
+                },
+                // There are far too many restrictions, see:
+                // https://www.sqlite.org/lang_altertable.html
+                .drop_column, .add_constraint, .drop_constraint => {
+                    return true;
+                },
+            }
+        }
+        return false;
+    }
+
     pub fn exec(self: *AlterBuilder) !void {
         const sqlite = self.db.conn.dialect() == .sqlite3;
-        const needs_twelvestep = true; // TODO
+        const needs_twelvestep = self.needsTwelveStep();
 
         if (sqlite and needs_twelvestep) {
             var tws = try TwelveStep.init(self.db, self.table, self.changes.items);
@@ -854,8 +875,7 @@ test "data migration" {
         \\CREATE TABLE "contacts" (
         \\  id INTEGER,
         \\  name TEXT NOT NULL,
-        \\  phone_number TEXT NOT NULL,
-        \\  email TEXT,
+        \\  "phone_number" TEXT NOT NULL, "email" TEXT,
         \\  PRIMARY KEY (id)
         \\) STRICT
     );
@@ -1022,4 +1042,37 @@ test "drop multiple constraints at once" {
         \\  CHECK (status IN ('active', 'inactive'))
         \\) STRICT
     );
+}
+
+test "alterTable().needsTwelveStep()" {
+    var db = try createDb("");
+    defer db.deinit();
+    const schema = db.schema();
+
+    // Setup a base table
+    try schema.createTable("test")
+        .id()
+        .column("name", .text, .{})
+        .exec();
+
+    var alter = schema.alterTable("test");
+
+    alter = alter.addColumn("nullable", .text, .{ .nullable = true });
+    try t.expect(!alter.needsTwelveStep());
+
+    alter = alter.addColumn("with_default", .int, .{ .default = "0" });
+    try t.expect(!alter.needsTwelveStep());
+
+    alter = alter.renameColumn("name", "new_name");
+    try t.expect(!alter.needsTwelveStep());
+
+    // Anything else should trigger TwelveStep
+    alter = alter.addColumn("req", .text, .{});
+    try t.expect(alter.needsTwelveStep());
+
+    // As they also should alone
+    try t.expect(schema.alterTable("test").addColumn("req", .text, .{}).needsTwelveStep());
+    try t.expect(schema.alterTable("test").addUnique("name").needsTwelveStep());
+    try t.expect(schema.alterTable("test").dropColumn("name").needsTwelveStep());
+    try t.expect(schema.alterTable("test").dropPrimaryKey().needsTwelveStep());
 }
