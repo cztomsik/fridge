@@ -126,6 +126,13 @@ pub fn isDense(comptime E: type) bool {
     return true;
 }
 
+pub fn isPacked(comptime T: type) ?type {
+    return switch (@typeInfo(T)) {
+        .@"struct" => |s| s.backing_integer,
+        else => null,
+    };
+}
+
 pub fn isJsonRepresentable(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .array, .@"struct", .@"union" => true,

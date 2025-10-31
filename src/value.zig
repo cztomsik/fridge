@@ -31,6 +31,11 @@ pub const Value = union(enum) {
             .float, .comptime_float => .{ .float = @floatCast(val) },
             .@"enum" => from(if (comptime util.isDense(T)) @tagName(val) else @as(u32, @intFromEnum(val)), arena),
             else => {
+                if (comptime util.isPacked(T)) |Int| {
+                    const num: Int = @bitCast(val);
+                    return .{ .int = @intCast(num) };
+                }
+
                 if (comptime util.isJsonRepresentable(T)) {
                     return .{ .string = try std.fmt.allocPrint(arena, "{f}", .{std.json.fmt(val, .{})}) };
                 }
@@ -60,6 +65,11 @@ pub const Value = union(enum) {
             .float, .comptime_float => @floatCast(self.float),
             .@"enum" => if (comptime util.isDense(T)) std.meta.stringToEnum(T, self.string) orelse error.InvalidEnumTag else @enumFromInt(self.int),
             else => {
+                if (util.isPacked(T)) |Int| {
+                    const num: Int = @intCast(self.int);
+                    return @bitCast(num);
+                }
+
                 if (comptime util.isJsonRepresentable(T)) {
                     return std.json.parseFromSliceLeaky(T, arena, self.string, .{
                         .allocate = .alloc_always,
@@ -89,3 +99,23 @@ pub const Blob = struct {
         return .{ .blob = self.bytes };
     }
 };
+
+test "packing" {
+    const Flags = packed struct(u8) { a: bool, b: bool, c: bool, _: u5 = 0 };
+    const flags: Flags = .{ .a = true, .b = false, .c = true };
+
+    const val = try Value.from(flags, undefined);
+    try std.testing.expect(val.int == 5);
+
+    const flags2 = try val.into(Flags, undefined);
+    try std.testing.expect(flags == flags2);
+
+    const RGBA = packed struct(u32) { r: u8, g: u8, b: u8, a: u8 };
+    const color: RGBA = .{ .r = 0xFF, .g = 0x80, .b = 0x40, .a = 0xCC };
+
+    const val2 = try Value.from(color, undefined);
+    try std.testing.expectEqual(val2.int, 0xCC4080FF);
+
+    const color2 = try val2.into(RGBA, undefined);
+    try std.testing.expect(color == color2);
+}
