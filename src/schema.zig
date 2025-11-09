@@ -267,6 +267,11 @@ pub const TableChange = union(enum) {
                 if (!opts[2].nullable) {
                     try buf.append(" NOT NULL");
                 }
+
+                if (opts[2].default) |def| {
+                    try buf.append(" DEFAULT ");
+                    try buf.append(def);
+                }
             },
             .rename_column => |names| {
                 try buf.append("RENAME COLUMN ");
