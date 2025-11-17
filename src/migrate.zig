@@ -3,7 +3,7 @@
 // different
 
 const std = @import("std");
-const SQLite3 = @import("sqlite.zig").SQLite3;
+const SQLite3 = @import("sqlite.zig").SqliteDriver;
 const Session = @import("session.zig").Session;
 const log = std.log.scoped(.db_migrate);
 

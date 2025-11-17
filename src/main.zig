@@ -1,11 +1,13 @@
 const std = @import("std");
 
-pub const Pool = @import("pool.zig").Pool;
-pub const PoolOptions = @import("pool.zig").PoolOptions;
-pub const SQLite3 = @import("sqlite.zig").SQLite3;
+// pub const Pool = @import("pool.zig").Pool;
+// pub const PoolOptions = @import("pool.zig").PoolOptions;
+pub const SqliteDriver = @import("sqlite.zig").SqliteDriver;
 
 pub const Value = @import("value.zig").Value;
 pub const Blob = @import("value.zig").Blob;
+pub const Driver = @import("driver.zig").Driver;
+pub const Dialect = @import("driver.zig").Dialect;
 pub const Connection = @import("connection.zig").Connection;
 pub const Statement = @import("statement.zig").Statement;
 pub const Session = @import("session.zig").Session;

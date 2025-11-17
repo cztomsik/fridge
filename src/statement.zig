@@ -3,28 +3,19 @@ const util = @import("util.zig");
 const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
 const Error = @import("error.zig").Error;
+const Driver = @import("driver.zig").Driver;
 
 /// Low-level prepared statement - avoid using.
-pub const Statement = extern struct {
+pub const Statement = struct {
+    driver: *Driver,
     handle: *anyopaque,
-    vtable: *const VTable(*anyopaque),
 
-    pub fn VTable(comptime H: type) type {
-        return struct {
-            bind: *const fn (self: H, index: usize, arg: Value) Error!void,
-            column: *const fn (self: H, index: usize) Error!Value,
-            step: *const fn (self: H) Error!bool,
-            reset: *const fn (self: H) Error!void,
-            deinit: *const fn (self: H) void,
-        };
-    }
-
-    pub fn deinit(self: *Statement) void {
-        self.vtable.deinit(self.handle);
+    pub fn deinit(self: Statement) void {
+        self.driver.vtable.deinitStmt(self.driver, self);
     }
 
     /// Executes the statement.
-    pub fn exec(self: *Statement) !void {
+    pub fn exec(self: Statement) !void {
         while (try self.step()) {
             // SQLite needs this (should be harmless for others)
         }
@@ -33,7 +24,7 @@ pub const Statement = extern struct {
     /// Returns a single row from the current result set.
     /// NOTE that the database (ie. SQLite) is free to hold a lock while the
     /// result set is not completely exhausted!
-    pub fn next(self: *Statement, comptime R: type, arena: std.mem.Allocator) !?R {
+    pub fn next(self: Statement, comptime R: type, arena: std.mem.Allocator) !?R {
         if (!try self.step()) {
             return null;
         }
@@ -63,29 +54,29 @@ pub const Statement = extern struct {
     }
 
     /// Bind a value to the given index
-    pub fn bind(self: *Statement, index: usize, val: Value) !void {
-        try self.vtable.bind(self.handle, index, val);
+    pub fn bind(self: Statement, index: usize, val: Value) !void {
+        try self.driver.vtable.bind(self.driver, self, index, val);
     }
 
     /// Bind all values to the statement
-    pub fn bindAll(self: *Statement, args: []const Value) !void {
+    pub fn bindAll(self: Statement, args: []const Value) !void {
         for (args, 0..) |val, i| {
             try self.bind(i, val);
         }
     }
 
     /// Get the value of the given column
-    pub fn column(self: *Statement, index: usize) !Value {
-        return self.vtable.column(self.handle, index);
+    pub fn column(self: Statement, index: usize) !Value {
+        return self.driver.vtable.column(self.driver, self, index);
     }
 
     /// Step the result set
-    pub fn step(self: *Statement) !bool {
-        return self.vtable.step(self.handle);
+    pub fn step(self: Statement) !bool {
+        return self.driver.vtable.step(self.driver, self);
     }
 
     /// Reset the statement to be executed again
-    pub fn reset(self: *Statement) !void {
-        try self.vtable.reset(self.handle);
+    pub fn reset(self: Statement) !void {
+        try self.driver.vtable.reset(self.driver, self);
     }
 };

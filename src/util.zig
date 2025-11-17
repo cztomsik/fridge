@@ -183,35 +183,3 @@ pub fn isAssignableTo(comptime A: type, B: type) bool {
 
     return false;
 }
-
-pub fn upcast(handle: anytype, comptime T: type) T {
-    return .{
-        .handle = handle,
-        .vtable = comptime brk: {
-            const Handle = @TypeOf(handle);
-            const Impl = switch (@typeInfo(@TypeOf(handle))) {
-                .pointer => |ptr| ptr.child,
-                else => @TypeOf(handle),
-            };
-
-            // Check the types first.
-            var impl: T.VTable(Handle) = undefined;
-            for (@typeInfo(@TypeOf(impl)).@"struct".fields) |f| {
-                if (std.meta.hasFn(Impl, f.name)) {
-                    @field(impl, f.name) = @field(Impl, f.name);
-                } else {
-                    @compileError("Impl " ++ @typeName(Impl) ++ " is missing " ++ f.name);
-                }
-            }
-
-            // Get erased vtable.
-            var res: T.VTable(*anyopaque) = undefined;
-            for (@typeInfo(@TypeOf(res)).@"struct".fields) |f| {
-                @field(res, f.name) = @ptrCast(@field(impl, f.name));
-            }
-
-            const copy = res;
-            break :brk &copy;
-        },
-    };
-}

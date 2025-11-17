@@ -1,34 +1,14 @@
 const std = @import("std");
 const util = @import("util.zig");
 const Statement = @import("statement.zig").Statement;
+const Driver = @import("driver.zig").Driver;
+const Dialect = @import("driver.zig").Dialect;
 const Value = @import("value.zig").Value;
 const Error = @import("error.zig").Error;
 
 pub const Connection = struct {
     handle: *anyopaque,
-    vtable: *const VTable(*anyopaque),
-
-    pub const Dialect = enum { sqlite3, other };
-
-    pub fn VTable(comptime H: type) type {
-        return struct {
-            dialect: *const fn (self: H) Dialect,
-            execAll: *const fn (self: H, sql: []const u8) Error!void,
-            prepare: *const fn (self: H, sql: []const u8, params: []const Value) Error!Statement,
-            rowsAffected: *const fn (self: H) Error!usize,
-            lastInsertRowId: *const fn (self: H) Error!i64,
-            lastError: *const fn (self: H) []const u8,
-            deinit: *const fn (self: H) void,
-        };
-    }
-
-    pub fn open(comptime T: type, allocator: std.mem.Allocator, options: T.Options) !Connection {
-        return util.upcast(try T.open(allocator, options), Connection);
-    }
-
-    pub fn dialect(self: Connection) Dialect {
-        return self.vtable.dialect(self.handle);
-    }
+    driver: *Driver,
 
     /// Executes all SQL statements in the given string.
     pub fn execAll(self: Connection, sql: []const u8) Error!void {
@@ -36,7 +16,7 @@ pub const Connection = struct {
             util.log.debug("{s}", .{self.lastError()});
         }
 
-        return self.vtable.execAll(self.handle, sql);
+        return self.driver.vtable.execAll(self.driver, self, sql);
     }
 
     /// Creates a prepared statement from the given SQL.
@@ -46,26 +26,26 @@ pub const Connection = struct {
             util.log.debug("Failed to prepare SQL: {s}\n", .{sql});
         }
 
-        return self.vtable.prepare(self.handle, sql, params);
+        return self.driver.vtable.prepare(self.driver, self, sql, params);
     }
 
     /// Returns the number of rows modified by the last INSERT/UPDATE/DELETE.
     pub fn rowsAffected(self: Connection) Error!usize {
-        return self.vtable.rowsAffected(self.handle);
+        return self.driver.vtable.rowsAffected(self.driver, self);
     }
 
     /// Returns the row ID of the last INSERT.
     pub fn lastInsertRowId(self: Connection) Error!i64 {
-        return self.vtable.lastInsertRowId(self.handle);
+        return self.driver.vtable.lastInsertRowId(self.driver, self);
     }
 
     /// Returns the last error message.
     pub fn lastError(self: Connection) []const u8 {
-        return self.vtable.lastError(self.handle);
+        return self.driver.vtable.lastError(self.driver, self);
     }
 
     /// Closes the connection.
     pub fn deinit(self: Connection) void {
-        self.vtable.deinit(self.handle);
+        self.driver.vtable.deinitConn(self.driver, self);
     }
 };

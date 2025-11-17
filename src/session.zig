@@ -2,7 +2,6 @@ const std = @import("std");
 const sqlite = @import("sqlite.zig");
 const util = @import("util.zig");
 const Connection = @import("connection.zig").Connection;
-const Pool = @import("pool.zig").Pool;
 const Statement = @import("statement.zig").Statement;
 const RawQuery = @import("raw.zig").Query;
 const Query = @import("query.zig").Query;
