@@ -587,9 +587,12 @@ pub const TwelveStep = struct {
                 const i = try self.findColumn(name);
                 _ = self.state.columns.orderedRemove(i);
 
-                for (self.state.constraints.items, 0..) |constraint, j| {
-                    if (constraint.refersOnly(name)) {
+                var j: usize = 0;
+                while (j < self.state.constraints.items.len) {
+                    if (self.state.constraints.items[j].refersOnly(name)) {
                         _ = self.state.constraints.orderedRemove(j);
+                    } else {
+                        j += 1;
                     }
                 }
             },
