@@ -91,8 +91,11 @@ pub const Session = struct {
 
     /// Insert a new record and return its primary key
     pub fn insert(self: *Session, comptime T: type, data: anytype) !util.Id(T) {
-        try self.query(T).insert(data).exec(); // TODO: returning id?
-        return @intCast(try self.conn.lastInsertRowId());
+        if (@typeInfo(util.Id(T)) == .int) {
+            try self.query(T).insert(data).exec();
+            return @intCast(try self.conn.lastInsertRowId());
+        }
+        return (try self.query(T).insert(data).returning("id").get(util.Id(T))).?;
     }
 
     /// Update a record by its primary key.
