@@ -208,9 +208,19 @@ pub const AlterBuilder = struct {
                 .rename_column => {
                     continue;
                 },
+                .drop_column => {
+                    // TODO: Most restrictions are sane, and are likely mistakes
+                    // so I think we can proceed and let SQLite reject directly.
+                    // The only edge-case is if a column has a UNIQUE constraint
+                    // because having to call dropUnique().dropColumn() is a bit
+                    // awkward and we could simply check unique and return true,
+                    // but let's keep that for later.
+                    // https://www.sqlite.org/lang_altertable.html#alter_table_drop_column
+                    continue;
+                },
                 // There are far too many restrictions, see:
                 // https://www.sqlite.org/lang_altertable.html
-                .drop_column, .add_constraint, .drop_constraint => {
+                .add_constraint, .drop_constraint => {
                     return true;
                 },
             }
@@ -220,9 +230,9 @@ pub const AlterBuilder = struct {
 
     pub fn exec(self: *AlterBuilder) !void {
         const sqlite = self.db.conn.dialect() == .sqlite3;
-        const needs_twelvestep = self.needsTwelveStep();
+        const needs_twelvestep = sqlite and self.needsTwelveStep();
 
-        if (sqlite and needs_twelvestep) {
+        if (needs_twelvestep) {
             var tws = try TwelveStep.init(self.db, self.table, self.changes.items);
             try tws.exec();
         } else {
@@ -1081,6 +1091,10 @@ test "alterTable().needsTwelveStep()" {
     // As they also should alone
     try t.expect(schema.alterTable("test").addColumn("req", .text, .{}).needsTwelveStep());
     try t.expect(schema.alterTable("test").addUnique("name").needsTwelveStep());
-    try t.expect(schema.alterTable("test").dropColumn("name").needsTwelveStep());
+    try t.expect(!schema.alterTable("test").dropColumn("name").needsTwelveStep());
     try t.expect(schema.alterTable("test").dropPrimaryKey().needsTwelveStep());
+
+    // TODO: dropColumn should trigger TwelveStep if column has UNIQUE constraint
+    // try schema.alterTable("test").addUnique("name").exec();
+    // try t.expect(try schema.alterTable("test").dropColumn("name").needsTwelveStep());
 }
