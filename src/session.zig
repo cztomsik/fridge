@@ -6,6 +6,7 @@ const Pool = @import("pool.zig").Pool;
 const Statement = @import("statement.zig").Statement;
 const RawQuery = @import("raw.zig").Query;
 const Query = @import("query.zig").Query;
+const Query2 = @import("query2.zig").Query;
 const Value = @import("value.zig").Value;
 const Schema = @import("schema.zig").Schema;
 
@@ -60,6 +61,7 @@ pub const Session = struct {
     }
 
     pub fn raw(self: *Session, sql: []const u8, args: anytype) RawQuery {
+        // TODO: return self.query(void, &.{ .raw(sql, args) })
         return RawQuery.raw(self, sql, args);
     }
 
@@ -67,20 +69,27 @@ pub const Session = struct {
         return .init(self);
     }
 
+    pub fn query2(self: *Session, comptime T: type, parts: []const Query2(T).Part) Query2(T) {
+        return .init(self, parts);
+    }
+
     pub fn schema(self: *Session) Schema {
         return .init(self);
     }
 
-    // TODO: this is useless without filter, ordering, paging, ...
-    //       and I'm not sure if we should order by primary key anyway
-    // /// Find all records of the given type.
-    // pub fn findAll(self: *Session, comptime T: type) ![]const T {
-    //     return self.query(T).findAll();
-    // }
-
     /// Find a record by its primary key.
     pub fn find(self: *Session, comptime T: type, id: util.Id(T)) !?T {
         return self.query(T).find(id);
+    }
+
+    /// Find one record of the given type.
+    pub fn findOne(self: *Session, comptime T: type, parts: []const Query2(T).Part) ![]const T {
+        return self.query2(T, parts).fetchOne(T);
+    }
+
+    /// Find all records of the given type.
+    pub fn findAll(self: *Session, comptime T: type, parts: []const Query2(T).Part) ![]const T {
+        return self.query2(T, parts).fetchAll(T);
     }
 
     /// Shorthand for insert() + find()
@@ -107,6 +116,11 @@ pub const Session = struct {
     pub fn delete(self: *Session, comptime T: type, id: util.Id(T)) !void {
         try self.query(T).where("id", id).delete().exec();
     }
+
+    // // Delete records of the given type.
+    // pub fn deleteAll(self: *Session, comptime T: type, parts: []const Query2(T).Part) !void {
+    //     return self.query2(T, parts).delete(T);
+    // }
 };
 
 const t = std.testing;
@@ -184,6 +198,20 @@ test "db.find(T, id)" {
         Person{ .id = 1, .name = "Alice" },
         db.find(Person, 1),
     );
+}
+
+test "db.findAll(T, &.{ ... })" {
+    var db = try createDb(ddl);
+    defer db.deinit();
+
+    try t.expectEqualDeep(&[_]Person{
+        .{ .id = 1, .name = "Alice" },
+        .{ .id = 2, .name = "Bob" },
+    }, db.findAll(Person, &.{}));
+
+    try t.expectEqualDeep(&[_]Person{
+        .{ .id = 1, .name = "Alice" },
+    }, db.findAll(Person, &.{.where("name", "Alice")}));
 }
 
 test "db.insert(T, data)" {

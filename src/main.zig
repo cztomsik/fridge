@@ -10,6 +10,7 @@ pub const Statement = @import("statement.zig").Statement;
 pub const Session = @import("session.zig").Session;
 pub const RawQuery = @import("raw.zig").Query;
 pub const Query = @import("query.zig").Query;
+pub const Query2 = @import("query2.zig").Query;
 pub const Schema = @import("schema.zig").Schema;
 
 // TODO: this is SQLite only and maybe it should be elsewhere when we support other databases
