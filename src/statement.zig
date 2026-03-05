@@ -41,12 +41,6 @@ pub const Statement = extern struct {
         var res: R = undefined;
 
         switch (@typeInfo(@TypeOf(res))) {
-            .array => |a| {
-                inline for (0..a.len) |i| {
-                    const val = try self.column(i);
-                    res[i] = try val.into(a.child, arena);
-                }
-            },
             .@"struct" => |s| {
                 inline for (s.fields, 0..) |f, i| {
                     const val = try self.column(i);

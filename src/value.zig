@@ -15,10 +15,6 @@ pub const Value = union(enum) {
             return val;
         }
 
-        if (comptime std.meta.hasFn(T, "toValue")) {
-            return T.toValue(val, arena);
-        }
-
         if (comptime util.isString(T)) {
             return .{ .string = val };
         }
@@ -50,10 +46,6 @@ pub const Value = union(enum) {
             return self;
         }
 
-        if (comptime std.meta.hasFn(T, "fromValue")) {
-            return T.fromValue(self, arena);
-        }
-
         if (comptime util.isString(T)) {
             return arena.dupeZ(u8, self.string);
         }
@@ -80,23 +72,6 @@ pub const Value = union(enum) {
                 @compileError("TODO: " ++ @typeName(T));
             },
         };
-    }
-
-    pub fn bind(self: Value, stmt: anytype, i: *usize) !void {
-        try stmt.bind(i.*, self);
-        i.* += 1;
-    }
-};
-
-pub const Blob = struct {
-    bytes: []const u8,
-
-    pub fn fromValue(val: Value, _: std.mem.Allocator) Blob {
-        return Blob{ .bytes = val.blob };
-    }
-
-    pub fn toValue(self: Blob, _: std.mem.Allocator) Value {
-        return .{ .blob = self.bytes };
     }
 };
 

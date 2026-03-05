@@ -451,22 +451,6 @@ pub const FkAction = enum {
     restrict,
     no_action,
 
-    pub fn fromValue(v: Value, _: std.mem.Allocator) !FkAction {
-        switch (v) {
-            .string => |str| {
-                if (str.len <= 11) {
-                    var buf: [11]u8 = undefined;
-                    const name = std.ascii.lowerString(&buf, str);
-                    std.mem.replaceScalar(u8, name, ' ', '_');
-                    return std.meta.stringToEnum(FkAction, name) orelse error.InvalidEnumTag;
-                }
-            },
-            else => {},
-        }
-
-        return error.InvalidEnumTag;
-    }
-
     pub fn toSql(self: FkAction, buf: *SqlBuf) !void {
         try buf.append(switch (self) {
             .set_null => "SET NULL",
@@ -532,7 +516,7 @@ pub const TwelveStep = struct {
 
         // FOREIGN KEY
         // TODO: multi-col?
-        for (try db.raw("SELECT \"from\" cols, \"table\" ref_table, \"to\" ref_cols, on_update, on_delete FROM pragma_foreign_key_list(?)", table).fetchAll(Fk)) |fk| {
+        for (try db.raw("SELECT \"from\" cols, \"table\" ref_table, \"to\" ref_cols, LOWER(REPLACE(on_update, ' ', '_')) on_update, LOWER(REPLACE(on_delete, ' ', '_')) on_delete FROM pragma_foreign_key_list(?)", table).fetchAll(Fk)) |fk| {
             _ = state.addConstraint(.foreign_key, fk);
         }
 
