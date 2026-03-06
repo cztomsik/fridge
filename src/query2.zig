@@ -107,7 +107,7 @@ pub fn Query(comptime T: type) type {
                 switch (p.args) {
                     .none => {},
                     .one => |v| try args.append(self.db.arena, v),
-                    else => @panic("TODO"),
+                    .other => |o| try o.bind(o.ptr, self.db.arena, &args),
                 }
             }
 
@@ -121,11 +121,25 @@ pub fn Query(comptime T: type) type {
             try stmt.exec();
         }
 
-        pub fn get(self: Query, comptime V: type) !?V {
+        pub fn get(self: Q, comptime V: type) !?V {
             var stmt = try self.prepare();
             defer stmt.deinit();
 
             return if (try stmt.next(?V, self.db.arena)) |v| v else null;
+        }
+
+        pub fn pluck(self: Q, comptime V: type) ![]const V {
+            var stmt = try self.prepare();
+            defer stmt.deinit();
+
+            var res = std.array_list.Managed(V).init(self.db.arena);
+            errdefer res.deinit();
+
+            while (try stmt.next(V, self.db.arena)) |v| {
+                try res.append(v);
+            }
+
+            return res.toOwnedSlice();
         }
 
         pub fn fetchOne(self: Q, comptime R: type) !?R {
@@ -203,7 +217,7 @@ pub fn Query(comptime T: type) type {
 pub const Args = union(enum) {
     none,
     one: Value,
-    other: struct { *anyopaque, *const fn (std.mem.Allocator, *std.ArrayList(Value)) void },
+    other: struct { ptr: *const anyopaque, bind: *const fn (*const anyopaque, std.mem.Allocator, *std.ArrayList(Value)) anyerror!void },
 
     inline fn isCoercable(comptime T: type) bool {
         return switch (@typeInfo(T)) {
@@ -216,12 +230,24 @@ pub const Args = union(enum) {
         if (comptime @TypeOf(args) == void) return .none;
         if (comptime isCoercable(@TypeOf(args))) return .{ .one = Value.from(args, undefined) catch unreachable };
 
-        // switch (@typeInfo(@TypeOf(args))) {
-        //     .pointer => // TODO: return .{ .other = .{ args, H.prepare } }
-        //     else => @compileError("Only primitive/coercable types can be passed directly, either pass &val or use &.{} syntax"),
-        // }
+        switch (@typeInfo(@TypeOf(args))) {
+            .pointer => |p| {
+                const H = struct {
+                    fn bind(ptr: *const anyopaque, arena: std.mem.Allocator, argz: *std.ArrayList(Value)) anyerror!void {
+                        const ref: *const p.child = @ptrCast(@alignCast(ptr));
 
-        @compileError("TODO: " ++ @typeName(@TypeOf(args)));
+                        if (comptime util.isTuple(p.child)) {
+                            inline for (0..ref.len) |i| try argz.append(arena, try .from(ref[i], arena));
+                        } else {
+                            try argz.append(arena, try .from(ref, arena));
+                        }
+                    }
+                };
+
+                return .{ .other = .{ .ptr = args, .bind = H.bind } };
+            },
+            else => @compileError("Only primitive/coercable types can be passed directly, either pass &val or use the &.{} syntax"),
+        }
     }
 };
 

@@ -863,8 +863,8 @@ test "data migration" {
         .exec();
 
     // Insert some test data
-    try db.raw("INSERT INTO contacts (name, phone) VALUES (?, ?)", .{ "Alice", "555-1234" }).exec();
-    try db.raw("INSERT INTO contacts (name, phone) VALUES (?, ?)", .{ "Bob", "555-5678" }).exec();
+    try db.raw("INSERT INTO contacts (name, phone) VALUES (?, ?)", &.{ "Alice", "555-1234" }).exec();
+    try db.raw("INSERT INTO contacts (name, phone) VALUES (?, ?)", &.{ "Bob", "555-5678" }).exec();
 
     // Perform schema changes
     try schema.alterTable("contacts")
