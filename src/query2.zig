@@ -22,78 +22,78 @@ pub fn Query(comptime T: type) type {
             pub const Kind = enum { empty, raw, SELECT, table, JOIN, @"LEFT JOIN", WHERE, @"OR WHERE", @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET };
             pub const EMPTY: Part = part(.empty, "", {});
 
-            fn part(kind: Kind, sql: []const u8, args: anytype) Part {
+            inline fn part(kind: Kind, sql: []const u8, args: anytype) Part {
                 return .{ .kind = kind, .sql = sql, .args = .from(args) };
             }
 
-            pub fn raw(sql: []const u8, args: anytype) Part {
+            pub inline fn raw(sql: []const u8, args: anytype) Part {
                 return part(.raw, sql, args);
             }
 
-            pub fn select(comptime sql: []const u8) Part {
+            pub inline fn select(comptime sql: []const u8) Part {
                 return part(.SELECT, sql, {});
             }
 
-            pub fn table(comptime sql: []const u8) Part {
+            pub inline fn table(comptime sql: []const u8) Part {
                 return part(.table, sql, {});
             }
 
             pub const from = table;
 
-            pub fn join(comptime sql: []const u8) Part {
+            pub inline fn join(comptime sql: []const u8) Part {
                 return part(.JOIN, sql, {});
             }
 
-            pub fn leftJoin(comptime sql: []const u8) Part {
+            pub inline fn leftJoin(comptime sql: []const u8) Part {
                 return part(.@"LEFT JOIN", sql, {});
             }
 
-            pub fn where(comptime sql: []const u8, args: anytype) Part {
+            pub inline fn where(comptime sql: []const u8, args: anytype) Part {
                 return part(.WHERE, if (@hasField(T, sql)) sql ++ " = ?" else sql, args);
             }
 
-            pub fn ifWhere(cond: bool, comptime sql: []const u8, args: anytype) Part {
+            pub inline fn ifWhere(cond: bool, comptime sql: []const u8, args: anytype) Part {
                 return if (cond) where(sql, args) else EMPTY;
             }
 
-            pub fn maybeWhere(comptime sql: []const u8, arg: anytype) Part {
+            pub inline fn maybeWhere(comptime sql: []const u8, arg: anytype) Part {
                 return if (arg) |v| where(sql, v) else EMPTY;
             }
 
-            pub fn orWhere(comptime sql: []const u8, args: anytype) Part {
+            pub inline fn orWhere(comptime sql: []const u8, args: anytype) Part {
                 return part(.@"OR WHERE", if (@hasField(T, sql)) sql ++ " = ?" else sql, args);
             }
 
-            pub fn orIfWhere(cond: bool, comptime sql: []const u8, args: anytype) Part {
+            pub inline fn orIfWhere(cond: bool, comptime sql: []const u8, args: anytype) Part {
                 return if (cond) orWhere(sql, args) else EMPTY;
             }
 
-            pub fn orMaybeWhere(comptime sql: []const u8, arg: anytype) Part {
+            pub inline fn orMaybeWhere(comptime sql: []const u8, arg: anytype) Part {
                 return if (arg) |v| orWhere(sql, v) else EMPTY;
             }
 
-            pub fn groupBy(comptime sql: []const u8) Part {
+            pub inline fn groupBy(comptime sql: []const u8) Part {
                 return part(.@"GROUP BY", sql, {});
             }
 
-            pub fn having(comptime sql: []const u8, args: anytype) Part {
+            pub inline fn having(comptime sql: []const u8, args: anytype) Part {
                 return part(.HAVING, sql, args);
             }
 
-            pub fn orderBy(comptime sql: []const u8) Part {
+            pub inline fn orderBy(comptime sql: []const u8) Part {
                 return part(.@"ORDER BY", sql, {});
             }
 
-            pub fn limit(n: u32) Part {
+            pub inline fn limit(n: u32) Part {
                 return part(.LIMIT, "?", n);
             }
 
-            pub fn offset(n: u32) Part {
+            pub inline fn offset(n: u32) Part {
                 return part(.OFFSET, "?", n);
             }
         };
 
-        pub fn init(db: *Session, parts: []const Part) Q {
+        pub inline fn init(db: *Session, parts: []const Part) Q {
             return .{ .db = db, .parts = parts };
         }
 
@@ -226,7 +226,7 @@ pub const Args = union(enum) {
         };
     }
 
-    fn from(args: anytype) Args {
+    inline fn from(args: anytype) Args {
         if (comptime @TypeOf(args) == void) return .none;
         if (comptime isCoercable(@TypeOf(args))) return .{ .one = Value.from(args, undefined) catch unreachable };
 
