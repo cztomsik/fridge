@@ -4,9 +4,8 @@ const util = @import("util.zig");
 const Connection = @import("connection.zig").Connection;
 const Pool = @import("pool.zig").Pool;
 const Statement = @import("statement.zig").Statement;
-const RawQuery = @import("raw.zig").Query;
-const Query = @import("query.zig").Query;
-const Query2 = @import("query2.zig").Query;
+const RawQuery = @import("query2.zig").RawQuery;
+const Query = @import("query2.zig").Query;
 const Value = @import("value.zig").Value;
 const Schema = @import("schema.zig").Schema;
 
@@ -61,15 +60,10 @@ pub const Session = struct {
     }
 
     pub fn raw(self: *Session, sql: []const u8, args: anytype) RawQuery {
-        // TODO: return self.query(void, &.{ .raw(sql, args) })
-        return RawQuery.raw(self, sql, args);
+        return .init(self, &.{.raw(sql, args)});
     }
 
-    pub fn query(self: *Session, comptime T: type) Query(T) {
-        return .init(self);
-    }
-
-    pub fn query2(self: *Session, comptime T: type, parts: []const Query2(T).Part) Query2(T) {
+    pub fn query(self: *Session, comptime T: type, parts: []const Query(T).Part) Query(T) {
         return .init(self, parts);
     }
 
@@ -79,17 +73,17 @@ pub const Session = struct {
 
     /// Find a record by its primary key.
     pub fn find(self: *Session, comptime T: type, id: util.Id(T)) !?T {
-        return self.query(T).find(id);
+        return self.findOne(T, &.{.where("id", id)});
     }
 
     /// Find one record of the given type.
-    pub fn findOne(self: *Session, comptime T: type, parts: []const Query2(T).Part) ![]const T {
-        return self.query2(T, parts).fetchOne(T);
+    pub fn findOne(self: *Session, comptime T: type, parts: []const Query(T).Part) !?T {
+        return self.query(T, parts).fetchOne(T);
     }
 
     /// Find all records of the given type.
-    pub fn findAll(self: *Session, comptime T: type, parts: []const Query2(T).Part) ![]const T {
-        return self.query2(T, parts).fetchAll(T);
+    pub fn findAll(self: *Session, comptime T: type, parts: []const Query(T).Part) ![]const T {
+        return self.query(T, parts).fetchAll(T);
     }
 
     /// Shorthand for insert() + find()
@@ -100,27 +94,43 @@ pub const Session = struct {
 
     /// Insert a new record and return its primary key
     pub fn insert(self: *Session, comptime T: type, data: anytype) !util.Id(T) {
-        if (@typeInfo(util.Id(T)) == .int) {
-            try self.query(T).insert(data).exec();
-            return @intCast(try self.conn.lastInsertRowId());
-        }
-        return (try self.query(T).insert(data).returning("id").get(util.Id(T))).?;
+        _ = self; // autofix
+        _ = data; // autofix
+        @panic("TODO");
+        // if (@typeInfo(util.Id(T)) == .int) {
+        //     try self.query(T).insert(data).exec();
+        //     return @intCast(try self.conn.lastInsertRowId());
+        // }
+        // return (try self.query(T).insert(data).returning("id").get(util.Id(T))).?;
     }
 
     /// Update a record by its primary key.
     pub fn update(self: *Session, comptime T: type, id: util.Id(T), data: anytype) !void {
-        return self.query(T).where("id", id).update(data).exec();
+        _ = self; // autofix
+        _ = id; // autofix
+        _ = data; // autofix
+        @panic("TODO");
+
+        // return self.query(T).where("id", id).update(data).exec();
     }
 
     /// Delete a record by its primary key.
     pub fn delete(self: *Session, comptime T: type, id: util.Id(T)) !void {
-        try self.query(T).where("id", id).delete().exec();
+        _ = self; // autofix
+        _ = id; // autofix
+        @panic("TODO");
+
+        // try self.query(T).where("id", id).delete().exec();
     }
 
     // // Delete records of the given type.
-    // pub fn deleteAll(self: *Session, comptime T: type, parts: []const Query2(T).Part) !void {
-    //     return self.query2(T, parts).delete(T);
-    // }
+    pub fn deleteAll(self: *Session, comptime T: type, parts: []const Query(T).Part) !void {
+        _ = self; // autofix
+        _ = parts; // autofix
+        @panic("TODO");
+
+        // return self.query2(T, parts).delete(T);
+    }
 };
 
 const t = std.testing;
@@ -165,30 +175,20 @@ test "db.raw()" {
     try t.expectEqualSlices(u32, &.{ 1, 2 }, try db.raw("SELECT id FROM Person", {}).pluck(u32));
 }
 
-test "db.query(T).xxx() value methods" {
-    var db = try createDb(ddl);
-    defer db.deinit();
+// test "db.query(T).xxx() value methods" {
+//     var db = try createDb(ddl);
+//     defer db.deinit();
 
-    var q = db.query(Person);
+//     var q = db.query(Person);
 
-    try t.expectEqual(true, q.exists());
-    try t.expectEqual(false, q.where("id", 3).exists());
-    try t.expectEqual(2, q.count("id"));
-    try t.expectEqual(1, q.min("id"));
-    try t.expectEqual(2, q.max("id"));
-    try t.expectEqual(null, q.where("id", 3).max("id"));
-    try t.expectEqualSlices(u32, &.{ 1, 2 }, try q.pluck("id"));
-}
-
-test "db.query(T).findAll()" {
-    var db = try createDb(ddl);
-    defer db.deinit();
-
-    try t.expectEqualDeep(&[_]Person{
-        .{ .id = 1, .name = "Alice" },
-        .{ .id = 2, .name = "Bob" },
-    }, db.query(Person).findAll());
-}
+//     try t.expectEqual(true, q.exists());
+//     try t.expectEqual(false, q.where("id", 3).exists());
+//     try t.expectEqual(2, q.count("id"));
+//     try t.expectEqual(1, q.min("id"));
+//     try t.expectEqual(2, q.max("id"));
+//     try t.expectEqual(null, q.where("id", 3).max("id"));
+//     try t.expectEqualSlices(u32, &.{ 1, 2 }, try q.pluck("id"));
+// }
 
 test "db.find(T, id)" {
     var db = try createDb(ddl);
@@ -240,3 +240,5 @@ test "db.delete(T, id)" {
     try t.expectEqual(1, db.conn.rowsAffected());
     try t.expectEqual(null, db.find(Person, 1));
 }
+
+// TODO: db.deleteAll(T, &.{...})

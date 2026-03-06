@@ -1,11 +1,11 @@
-// zig test src/query2.zig -lsqlite3
-
 const std = @import("std");
 const Session = @import("session.zig").Session;
 const Value = @import("value.zig").Value;
 const Statement = @import("statement.zig").Statement;
 const SqlBuf = @import("sql.zig").SqlBuf;
 const util = @import("util.zig");
+
+pub const RawQuery = Query(struct {});
 
 pub fn Query(comptime T: type) type {
     return struct {
@@ -24,6 +24,10 @@ pub fn Query(comptime T: type) type {
 
             fn part(kind: Kind, sql: []const u8, args: anytype) Part {
                 return .{ .kind = kind, .sql = sql, .args = .from(args) };
+            }
+
+            pub fn raw(sql: []const u8, args: anytype) Part {
+                return part(.raw, sql, args);
             }
 
             pub fn select(comptime sql: []const u8) Part {
@@ -115,6 +119,13 @@ pub fn Query(comptime T: type) type {
             defer stmt.deinit();
 
             try stmt.exec();
+        }
+
+        pub fn get(self: Query, comptime V: type) !?V {
+            var stmt = try self.prepare();
+            defer stmt.deinit();
+
+            return if (try stmt.next(?V, self.db.arena)) |v| v else null;
         }
 
         pub fn fetchOne(self: Q, comptime R: type) !?R {
@@ -226,17 +237,17 @@ test "select" {
     var db: *Session = undefined;
 
     try expectSql(
-        db.query2(Person, &.{}),
+        db.query(Person, &.{}),
         "SELECT id, name, age FROM Person",
     );
 
     try expectSql(
-        db.query2(Person, &.{.select("name")}),
+        db.query(Person, &.{.select("name")}),
         "SELECT name FROM Person",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .select("name"), .select("age") }),
+        db.query(Person, &.{ .select("name"), .select("age") }),
         "SELECT name, age FROM Person",
     );
 }
@@ -245,12 +256,12 @@ test "join" {
     var db: *Session = undefined;
 
     try expectSql(
-        db.query2(Person, &.{.join("Address ON Person.id = Address.person_id")}),
+        db.query(Person, &.{.join("Address ON Person.id = Address.person_id")}),
         "SELECT id, name, age FROM Person JOIN Address ON Person.id = Address.person_id",
     );
 
     try expectSql(
-        db.query2(Person, &.{.leftJoin("Address ON Person.id = Address.person_id")}),
+        db.query(Person, &.{.leftJoin("Address ON Person.id = Address.person_id")}),
         "SELECT id, name, age FROM Person LEFT JOIN Address ON Person.id = Address.person_id",
     );
 }
@@ -259,38 +270,38 @@ test "where" {
     var db: *Session = undefined;
 
     try expectSql(
-        db.query2(Person, &.{.where("name", "Alice")}),
+        db.query(Person, &.{.where("name", "Alice")}),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{.where("age > ?", 18)}),
+        db.query(Person, &.{.where("age > ?", 18)}),
         "SELECT id, name, age FROM Person WHERE age > ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .where("name", "Alice"), .where("age", 20) }),
+        db.query(Person, &.{ .where("name", "Alice"), .where("age", 20) }),
         "SELECT id, name, age FROM Person WHERE name = ? AND age = ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{.ifWhere(false, "name", "Alice")}),
+        db.query(Person, &.{.ifWhere(false, "name", "Alice")}),
         "SELECT id, name, age FROM Person",
     );
 
     try expectSql(
-        db.query2(Person, &.{.ifWhere(true, "name", "Alice")}),
+        db.query(Person, &.{.ifWhere(true, "name", "Alice")}),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
         // Check that arg type is "flat" optional even for opt columns
-        db.query2(Person, &.{.maybeWhere("id", @as(?u32, null))}),
+        db.query(Person, &.{.maybeWhere("id", @as(?u32, null))}),
         "SELECT id, name, age FROM Person",
     );
 
     try expectSql(
-        db.query2(Person, &.{.maybeWhere("name", @as(?[]const u8, "Alice"))}),
+        db.query(Person, &.{.maybeWhere("name", @as(?[]const u8, "Alice"))}),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 }
@@ -299,37 +310,37 @@ test "orWhere" {
     var db: *Session = undefined;
 
     try expectSql(
-        db.query2(Person, &.{.orWhere("name", "Alice")}),
+        db.query(Person, &.{.orWhere("name", "Alice")}),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{.orWhere("age > ?", 18)}),
+        db.query(Person, &.{.orWhere("age > ?", 18)}),
         "SELECT id, name, age FROM Person WHERE age > ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .where("name", "Alice"), .orWhere("age", 20) }),
+        db.query(Person, &.{ .where("name", "Alice"), .orWhere("age", 20) }),
         "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .where("name", "Alice"), .orIfWhere(false, "age", 20) }),
+        db.query(Person, &.{ .where("name", "Alice"), .orIfWhere(false, "age", 20) }),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .where("name", "Alice"), .orIfWhere(true, "age", 20) }),
+        db.query(Person, &.{ .where("name", "Alice"), .orIfWhere(true, "age", 20) }),
         "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .where("name", "Alice"), .orMaybeWhere("age", @as(?u8, null)) }),
+        db.query(Person, &.{ .where("name", "Alice"), .orMaybeWhere("age", @as(?u8, null)) }),
         "SELECT id, name, age FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .where("name", "Alice"), .orMaybeWhere("age", @as(?u8, 20)) }),
+        db.query(Person, &.{ .where("name", "Alice"), .orMaybeWhere("age", @as(?u8, 20)) }),
         "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
     );
 }
@@ -338,22 +349,22 @@ test "groupBy/having" {
     var db: *Session = undefined;
 
     try expectSql(
-        db.query2(Person, &.{.groupBy("name")}),
+        db.query(Person, &.{.groupBy("name")}),
         "SELECT id, name, age FROM Person GROUP BY name",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .groupBy("name"), .groupBy("age") }),
+        db.query(Person, &.{ .groupBy("name"), .groupBy("age") }),
         "SELECT id, name, age FROM Person GROUP BY name, age",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .groupBy("name"), .having("COUNT(*) > ?", 1) }),
+        db.query(Person, &.{ .groupBy("name"), .having("COUNT(*) > ?", 1) }),
         "SELECT id, name, age FROM Person GROUP BY name HAVING COUNT(*) > ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .groupBy("name"), .having("COUNT(*) > ?", 1), .having("SUM(age) > ?", 50) }),
+        db.query(Person, &.{ .groupBy("name"), .having("COUNT(*) > ?", 1), .having("SUM(age) > ?", 50) }),
         "SELECT id, name, age FROM Person GROUP BY name HAVING COUNT(*) > ? AND SUM(age) > ?",
     );
 }
@@ -362,12 +373,12 @@ test "orderBy" {
     var db: *Session = undefined;
 
     try expectSql(
-        db.query2(Person, &.{.orderBy("name asc")}),
+        db.query(Person, &.{.orderBy("name asc")}),
         "SELECT id, name, age FROM Person ORDER BY name asc",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .orderBy("name asc"), .orderBy("age desc") }),
+        db.query(Person, &.{ .orderBy("name asc"), .orderBy("age desc") }),
         "SELECT id, name, age FROM Person ORDER BY name asc, age desc",
     );
 }
@@ -376,17 +387,17 @@ test "limit/offset" {
     var db: *Session = undefined;
 
     try expectSql(
-        db.query2(Person, &.{.limit(10)}),
+        db.query(Person, &.{.limit(10)}),
         "SELECT id, name, age FROM Person LIMIT ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{.offset(10)}),
+        db.query(Person, &.{.offset(10)}),
         "SELECT id, name, age FROM Person OFFSET ?",
     );
 
     try expectSql(
-        db.query2(Person, &.{ .limit(10), .offset(20) }),
+        db.query(Person, &.{ .limit(10), .offset(20) }),
         "SELECT id, name, age FROM Person LIMIT ? OFFSET ?",
     );
 }
