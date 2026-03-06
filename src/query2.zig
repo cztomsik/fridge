@@ -246,7 +246,11 @@ pub const Args = union(enum) {
 
                 return .{ .other = .{ .ptr = args, .bind = H.bind } };
             },
-            else => @compileError("Only primitive/coercable types can be passed directly, either pass &val or use the &.{} syntax"),
+            .@"struct" => if (comptime util.isTuple(@TypeOf(args)))
+                @compileError("Expected &.{...} (pointer to tuple), got .{...} by value. Add & before the .{...}")
+            else
+                @compileError("Expected a pointer to " ++ @typeName(@TypeOf(args)) ++ ", use &val instead of val"),
+            else => @compileError("Unexpected " ++ @typeName(@TypeOf(args)) ++ ". Use a primitive, &val, or &.{...}"),
         }
     }
 };
