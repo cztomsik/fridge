@@ -141,6 +141,14 @@ const Stmt = opaque {
         });
     }
 
+    pub fn columnCount(self: *Stmt) usize {
+        return @intCast(c.sqlite3_column_count(self.ptr()));
+    }
+
+    pub fn columnName(self: *Stmt, index: usize) []const u8 {
+        return std.mem.span(c.sqlite3_column_name(self.ptr(), @intCast(index)));
+    }
+
     pub fn column(self: *Stmt, index: usize) !Value {
         const i: c_int = @intCast(index);
 

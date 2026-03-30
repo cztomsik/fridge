@@ -12,6 +12,8 @@ pub const Statement = extern struct {
     pub fn VTable(comptime H: type) type {
         return struct {
             bind: *const fn (self: H, index: usize, arg: Value) Error!void,
+            columnCount: *const fn (self: H) usize,
+            columnName: *const fn (self: H, index: usize) []const u8,
             column: *const fn (self: H, index: usize) Error!Value,
             step: *const fn (self: H) Error!bool,
             reset: *const fn (self: H) Error!void,
@@ -72,6 +74,16 @@ pub const Statement = extern struct {
         for (args, 0..) |val, i| {
             try self.bind(i, val);
         }
+    }
+
+    /// Get the number of columns in the result set
+    pub fn columnCount(self: *Statement) usize {
+        return self.vtable.columnCount(self.handle);
+    }
+
+    /// Get the name of the given column
+    pub fn columnName(self: *Statement, index: usize) []const u8 {
+        return self.vtable.columnName(self.handle, index);
     }
 
     /// Get the value of the given column
