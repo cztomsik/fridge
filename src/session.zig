@@ -71,16 +71,9 @@ pub const Session = struct {
         return .init(self);
     }
 
-    // TODO: this is useless without filter, ordering, paging, ...
-    //       and I'm not sure if we should order by primary key anyway
-    // /// Find all records of the given type.
-    // pub fn findAll(self: *Session, comptime T: type) ![]const T {
-    //     return self.query(T).findAll();
-    // }
-
     /// Find a record by its primary key.
     pub fn find(self: *Session, comptime T: type, id: util.Id(T)) !?T {
-        return self.query(T).find(id);
+        return self.query(T).findBy("id", id);
     }
 
     /// Shorthand for insert() + find()

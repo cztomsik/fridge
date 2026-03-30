@@ -101,16 +101,12 @@ pub fn Query(comptime T: type) type {
             return self.select("AVG(" ++ col ++ ")").get(util.ColType(T, col));
         }
 
-        pub fn find(self: Q, id: util.Id(T)) !?T {
-            return self.findBy("id", id);
-        }
-
         pub fn findBy(self: Q, comptime col: []const u8, val: util.ColType(T, col)) !?T {
-            return self.where(col, val).findFirst();
+            return self.where(col, val).findOne();
         }
 
-        pub fn findFirst(self: Q) !?T {
-            return self.limit(1).raw.fetchOne(T);
+        pub fn findOne(self: Q) !?T {
+            return self.raw.fetchOne(T);
         }
 
         pub fn findAll(self: Q) ![]const T {
