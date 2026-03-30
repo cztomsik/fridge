@@ -2,7 +2,7 @@ const std = @import("std");
 const util = @import("util.zig");
 const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
-const RawQuery = @import("raw.zig").Query;
+const RawQuery = @import("raw.zig").RawQuery;
 const Statement = @import("statement.zig").Statement;
 const SqlBuf = @import("sql.zig").SqlBuf;
 

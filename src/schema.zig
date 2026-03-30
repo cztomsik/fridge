@@ -2,7 +2,6 @@ const std = @import("std");
 const util = @import("util.zig");
 const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
-const RawQuery = @import("raw.zig").Query;
 const SqlBuf = @import("sql.zig").SqlBuf;
 
 pub const Schema = struct {
