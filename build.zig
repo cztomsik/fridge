@@ -13,9 +13,10 @@ pub fn build(b: *std.Build) !void {
     lib.link_libc = true;
 
     if (bundle) {
-        const src = b.dependency("sqlite_source", .{});
-        lib.addIncludePath(src.path("."));
-        lib.addCSourceFile(.{ .file = src.path("sqlite3.c"), .flags = &.{"-std=c99"} });
+        if (b.lazyDependency("sqlite_source", .{})) |src| {
+            lib.addIncludePath(src.path("."));
+            lib.addCSourceFile(.{ .file = src.path("sqlite3.c"), .flags = &.{"-std=c99"} });
+        }
     } else {
         // lib.linkSystemLibrary("sqlite3", .{});
         try lib.link_objects.append(b.allocator, .{

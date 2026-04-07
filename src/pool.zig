@@ -90,7 +90,7 @@ pub fn Pool(comptime T: type) type {
             // Notify all waiting threads that the pool is closing
             self.wait.broadcast();
 
-            // Now we can aquire the mutex and continue without worying about deadlocks
+            // Now we can acquire the mutex and continue without worying about deadlocks
             self.mutex.lock();
             defer self.mutex.unlock();
 
