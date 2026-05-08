@@ -5,9 +5,7 @@ const Value = @import("value.zig").Value;
 const Connection = @import("connection.zig").Connection;
 const Statement = @import("statement.zig").Statement;
 
-const c = @cImport(
-    @cInclude("sqlite3.h"),
-);
+const c = @import("c");
 
 pub const SQLite3 = opaque {
     pub const Options = struct {
@@ -19,10 +17,10 @@ pub const SQLite3 = opaque {
         extensions: []const []const u8 = &.{},
     };
 
-    pub fn open(allocator: std.mem.Allocator, options: Options) !*SQLite3 {
+    pub fn open(allocator: std.mem.Allocator, io: std.Io, options: Options) !*SQLite3 {
         if (options.dir) |dir| {
             if (std.mem.indexOfScalar(u8, options.filename, ':') == null) {
-                std.fs.cwd().makePath(dir) catch {};
+                std.Io.Dir.cwd().createDirPath(io, dir) catch {};
                 const path = try std.fs.path.joinZ(allocator, &.{ dir, options.filename });
                 defer allocator.free(path);
 

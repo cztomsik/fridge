@@ -22,17 +22,19 @@ pub fn Pool(comptime T: type) type {
     return struct {
         conns: std.array_list.Managed(PoolConnection(T)),
         conn_opts: T.Options,
-        mutex: std.Thread.Mutex = .{},
-        wait: std.Thread.Condition = .{},
+        mutex: std.Io.Mutex = .init,
+        wait: std.Io.Condition = .init,
+        io: std.Io,
 
         const Error = error{ OutOfMemory, ConnectionFailed, PoolClosing };
 
         /// Initialize a connection pool with capacity for `max_count` connections
         /// which will be created using the provided driver-specific `options`.
-        pub fn init(allocator: std.mem.Allocator, pool_opts: PoolOptions, conn_opts: T.Options) !@This() {
+        pub fn init(allocator: std.mem.Allocator, io: std.Io, pool_opts: PoolOptions, conn_opts: T.Options) !@This() {
             return .{
                 .conns = try .initCapacity(allocator, pool_opts.max_count),
                 .conn_opts = conn_opts,
+                .io = io,
             };
         }
 
@@ -48,8 +50,8 @@ pub fn Pool(comptime T: type) type {
             // open it (e.g. DNS). It would be better to not block the entire pool
             // while waiting. On the other hand, it only happens once every time the
             // pool is empty, so maybe it's not worth the extra complexity.
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             // TODO:
             // What's worse is that we might loose the connection (network error)
@@ -65,7 +67,7 @@ pub fn Pool(comptime T: type) type {
 
                 if (self.conns.items.len < self.conns.capacity) {
                     const pconn = self.conns.addOneAssumeCapacity();
-                    pconn.* = .{ .pool = self, .conn = try .open(T, self.conns.allocator, self.conn_opts) };
+                    pconn.* = .{ .pool = self, .conn = try .open(T, self.conns.allocator, self.io, self.conn_opts) };
                     return util.upcast(pconn, Connection);
                 }
 
@@ -73,7 +75,7 @@ pub fn Pool(comptime T: type) type {
                     return error.PoolClosing;
                 }
 
-                self.wait.wait(&self.mutex);
+                self.wait.waitUncancelable(self.io, &self.mutex);
                 continue;
             }
         }
@@ -82,23 +84,34 @@ pub fn Pool(comptime T: type) type {
         pub fn deinit(self: *@This()) void {
             // Steal the list which will prevent any new connections (and deadlocks)
             var pconns = brk: {
-                self.mutex.lock();
-                defer self.mutex.unlock();
+                self.mutex.lockUncancelable(self.io);
+                defer self.mutex.unlock(self.io);
                 break :brk self.conns.moveToUnmanaged();
             };
 
             // Notify all waiting threads that the pool is closing
-            self.wait.broadcast();
+            self.wait.broadcast(self.io);
 
-            // Now we can acquire the mutex and continue without worying about deadlocks
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            // Now we can aquire the mutex and continue without worying about deadlocks
+            self.mutex.lockUncancelable(self.io);
+            defer self.mutex.unlock(self.io);
 
             // Gracefully close all connections
             for (pconns.items) |*pconn| {
                 while (!pconn.available) {
                     // Wait up to 5 seconds and then close the connection forcefully
-                    self.wait.timedWait(&self.mutex, 5 * std.time.ns_per_s) catch break;
+                    const U = union(enum) {
+                        signal: std.Io.Cancelable!void,
+                        sleep: std.Io.Cancelable!void,
+                    };
+                    var buffer: [2]U = undefined;
+                    var wait_select: std.Io.Select(U) = .init(self.io, &buffer);
+                    wait_select.async(.signal, std.Io.Condition.wait, .{ &self.wait, self.io, &self.mutex });
+                    wait_select.async(.sleep, std.Io.sleep, .{ self.io, std.Io.Duration.fromSeconds(5), std.Io.Clock.awake });
+                    // Wait for one of them to finish
+                    _ = wait_select.await() catch unreachable;
+                    // Cancel the other ones
+                    wait_select.cancelDiscard();
                 }
 
                 pconn.conn.deinit();
@@ -149,13 +162,13 @@ fn PoolConnection(comptime T: type) type {
         }
 
         pub fn deinit(self: *PoolConn) void {
-            self.pool.mutex.lock();
+            self.pool.mutex.lockUncancelable(self.pool.io);
 
             std.debug.assert(!self.available);
             self.available = true;
 
-            self.pool.mutex.unlock();
-            self.pool.wait.signal();
+            self.pool.mutex.unlock(self.pool.io);
+            self.pool.wait.signal(self.pool.io);
         }
     };
 }
@@ -164,7 +177,7 @@ const t = std.testing;
 const TestConn = @import("testing.zig").TestConn;
 
 test Pool {
-    var pool = try Pool(TestConn).init(t.allocator, .{ .max_count = 3 }, {});
+    var pool = try Pool(TestConn).init(t.allocator, std.testing.io, .{ .max_count = 3 }, {});
     defer pool.deinit();
 
     var c1 = try pool.getConnection();
@@ -200,7 +213,7 @@ const Runner = struct {
     fn run(self: *Runner) !void {
         var count: usize = 0;
         while (self.pool.getConnection()) |conn| : (count += 1) {
-            std.Thread.sleep(count % 10 * 10 * std.time.ns_per_ms);
+            try std.testing.io.sleep(.fromMilliseconds(@as(i64, @intCast(count % 10 * 10))), .awake);
             conn.deinit();
         } else |e| return switch (e) {
             error.PoolClosing => {},
@@ -210,7 +223,7 @@ const Runner = struct {
 };
 
 test "Thread safety" {
-    var pool = try Pool(TestConn).init(t.allocator, .{ .max_count = 3 }, {});
+    var pool = try Pool(TestConn).init(t.allocator, std.testing.io, .{ .max_count = 3 }, {});
     defer pool.deinit();
 
     TestConn.created.store(0, .release);
@@ -222,7 +235,7 @@ test "Thread safety" {
         .thread = try std.Thread.spawn(.{}, Runner.run, .{r}),
     };
 
-    std.Thread.sleep(500 * std.time.ns_per_ms);
+    try std.testing.io.sleep(.fromMilliseconds(500), .awake);
     pool.deinit();
     for (runners) |r| r.thread.join();
 

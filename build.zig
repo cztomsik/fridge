@@ -5,10 +5,24 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const bundle = b.option(bool, "bundle", "Bundle SQLite") orelse false;
 
+    const translate_c = b.addTranslateC(.{
+        .root_source_file = b.path("src/c.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    if (bundle) {
+        const src = b.dependency("sqlite_source", .{});
+        translate_c.addIncludePath(src.path("."));
+    }
+
     const lib = b.addModule("fridge", .{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{.{
+            .name = "c",
+            .module = translate_c.createModule(),
+        }},
     });
     lib.link_libc = true;
 
@@ -39,7 +53,7 @@ pub fn build(b: *std.Build) !void {
         .link_libc = true,
     });
     test_mod.link_objects = lib.link_objects;
-    const tests = b.addTest(.{ .root_module = test_mod, .filters = test_filter });
+    const tests = b.addTest(.{ .root_module = lib, .filters = test_filter });
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_tests.step);

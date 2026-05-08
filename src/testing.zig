@@ -6,7 +6,7 @@ const Value = @import("value.zig").Value;
 const SqlBuf = @import("sql.zig").SqlBuf;
 
 pub fn createDb(ddl: []const u8) !Session {
-    var db = try Session.open(@import("sqlite.zig").SQLite3, std.testing.allocator, .{ .filename = ":memory:" });
+    var db = try Session.open(@import("sqlite.zig").SQLite3, std.testing.allocator, std.testing.io, .{ .filename = ":memory:" });
     errdefer db.deinit();
 
     try db.conn.execAll(ddl);
@@ -15,7 +15,7 @@ pub fn createDb(ddl: []const u8) !Session {
 }
 
 pub fn fakeDb() !Session {
-    return Session.open(TestConn, std.testing.allocator, {});
+    return Session.open(TestConn, std.testing.allocator, std.testing.io, {});
 }
 
 pub fn expectSql(q: anytype, expected: []const u8) !void {
@@ -41,7 +41,7 @@ pub const TestConn = struct {
     pub var created: std.atomic.Value(u32) = .{ .raw = 0 };
     pub var destroyed: std.atomic.Value(u32) = .{ .raw = 0 };
 
-    pub fn open(_: std.mem.Allocator, _: void) !*TestConn {
+    pub fn open(_: std.mem.Allocator, _: std.Io, _: void) !*TestConn {
         const ptr = try std.testing.allocator.create(TestConn);
         ptr.id = created.fetchAdd(1, .monotonic);
         return ptr;

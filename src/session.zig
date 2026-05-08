@@ -13,9 +13,9 @@ pub const Session = struct {
     arena: std.mem.Allocator,
     conn: Connection,
 
-    /// Generic shorthand for `Session.init(T.open(allocator, options))`
-    pub fn open(comptime T: type, allocator: std.mem.Allocator, options: T.Options) !Session {
-        const conn = try Connection.open(T, allocator, options);
+    /// Generic shorthand for `Session.init(T.open(allocator, io, options))`
+    pub fn open(comptime T: type, allocator: std.mem.Allocator, io: std.Io, options: T.Options) !Session {
+        const conn = try Connection.open(T, allocator, io, options);
         errdefer conn.deinit();
 
         return .init(allocator, conn);
