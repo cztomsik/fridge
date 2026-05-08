@@ -22,8 +22,8 @@ pub const Connection = struct {
         };
     }
 
-    pub fn open(comptime T: type, allocator: std.mem.Allocator, options: T.Options) !Connection {
-        return util.upcast(try T.open(allocator, options), Connection);
+    pub fn open(comptime T: type, allocator: std.mem.Allocator, io: std.Io, options: T.Options) !Connection {
+        return util.upcast(try T.open(allocator, io, options), Connection);
     }
 
     pub fn dialect(self: Connection) Dialect {

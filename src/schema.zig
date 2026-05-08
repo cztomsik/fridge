@@ -45,8 +45,8 @@ pub const Schema = struct {
 pub const TableBuilder = struct {
     db: *Session,
     table: []const u8,
-    columns: std.ArrayListUnmanaged(Column) = .{},
-    constraints: std.ArrayListUnmanaged(Constraint) = .{},
+    columns: std.ArrayList(Column) = .empty,
+    constraints: std.ArrayList(Constraint) = .empty,
 
     pub fn id(self: *TableBuilder) *TableBuilder {
         return self.column("id", ColumnType.int, .{
@@ -133,7 +133,7 @@ pub const TableBuilder = struct {
 pub const AlterBuilder = struct {
     db: *Session,
     table: []const u8,
-    changes: std.ArrayListUnmanaged(TableChange) = .{},
+    changes: std.ArrayList(TableChange) = .empty,
 
     pub fn addColumn(self: *AlterBuilder, name: []const u8, ctype: ColumnType, opts: ColumnOptions) *AlterBuilder {
         if (opts.primary_key) {

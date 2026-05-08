@@ -17,5 +17,5 @@ pub const Schema = @import("schema.zig").Schema;
 pub const migrate = @import("migrate.zig").migrate;
 
 test {
-    std.testing.refAllDeclsRecursive(@This());
+    std.testing.refAllDecls(@This());
 }
