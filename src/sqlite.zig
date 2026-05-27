@@ -56,7 +56,7 @@ pub const SQLite3 = opaque {
     pub fn loadExtension(self: *SQLite3, name: []const u8) !void {
         var err: ?[*:0]const u8 = null;
         var buf: [255]u8 = undefined;
-        const sym = try std.fmt.bufPrintZ(&buf, "sqlite3_{s}_init", .{name});
+        const sym = try std.fmt.bufPrintSentinel(&buf, "sqlite3_{s}_init", .{name}, 0);
 
         switch (builtin.target.os.tag) {
             .macos, .linux => {
@@ -75,7 +75,7 @@ pub const SQLite3 = opaque {
         }
 
         if (comptime @hasField(c, "sqlite3_enable_load_extension")) {
-            const zName = try std.fmt.bufPrintZ(&buf, "{s}", .{name});
+            const zName = try std.fmt.bufPrintSentinel(&buf, "{s}", .{name}, 0);
             try check(c.sqlite3_load_extension(self.ptr(), zName, null, null));
         } else {
             util.log.err("SQLite extension loading is disabled", .{});
@@ -89,7 +89,7 @@ pub const SQLite3 = opaque {
 
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {
         // TODO: c_allocator is just a quickfix for this https://github.com/cztomsik/fridge/blob/62bf1daeccf6781b5846ec70042d2ebaf3fb8644/src/sqlite.zig#L50
-        const csql = try std.heap.c_allocator.dupeZ(u8, sql);
+        const csql = try std.heap.c_allocator.dupeSentinel(u8, sql, 0);
         defer std.heap.c_allocator.free(csql);
 
         try check(c.sqlite3_exec(self.ptr(), csql, null, null, null));

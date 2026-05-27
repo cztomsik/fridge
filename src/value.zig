@@ -55,7 +55,7 @@ pub const Value = union(enum) {
         }
 
         if (comptime util.isString(T)) {
-            return arena.dupeZ(u8, self.string);
+            return arena.dupeSentinel(u8, self.string, 0);
         }
 
         return switch (@typeInfo(T)) {
