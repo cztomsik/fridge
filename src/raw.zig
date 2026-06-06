@@ -93,7 +93,7 @@ pub const RawQuery = struct {
     }
 
     pub fn setAll(self: RawQuery, data: anytype) RawQuery {
-        if (comptime std.meta.fields(@TypeOf(data)).len == 0) {
+        if (comptime std.meta.fieldNames(@TypeOf(data)).len == 0) {
             return self;
         }
 
@@ -253,8 +253,8 @@ pub const RawQuery = struct {
 
         var args: std.ArrayList(Value) = .empty;
 
-        inline for (std.meta.fields(@TypeOf(self.parts))) |f| {
-            if (@field(self.parts, f.name)) |p| {
+        inline for (@typeInfo(@TypeOf(self.parts)).@"struct".field_names) |f| {
+            if (@field(self.parts, f)) |p| {
                 try args.ensureUnusedCapacity(self.db.arena, p.countArgs());
                 p.collectArgsInto(&args);
             }
@@ -304,9 +304,9 @@ const Args = union(enum) {
     }
 
     fn fromFields(args: anytype, db: *Session) Args {
-        const fields = std.meta.fields(@TypeOf(args));
+        const fields = @typeInfo(@TypeOf(args)).@"struct".field_names;
         const res = db.arena.alloc(Value, fields.len) catch @panic("OOM");
-        inline for (fields, 0..) |f, i| res[i] = Value.from(@field(args, f.name), db.arena) catch @panic("OOM");
+        inline for (fields, 0..) |f, i| res[i] = Value.from(@field(args, f), db.arena) catch @panic("OOM");
 
         return .{ .many = res };
     }
