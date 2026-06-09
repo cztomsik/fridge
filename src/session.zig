@@ -35,8 +35,9 @@ pub const Session = struct {
     /// Close the session (including the connection)
     pub fn deinit(self: *Session) void {
         const arena: *std.heap.ArenaAllocator = @ptrCast(@alignCast(self.arena.ptr));
+        const gpa = arena.child_allocator;
         arena.deinit();
-        arena.child_allocator.destroy(arena);
+        gpa.destroy(arena);
 
         self.conn.deinit();
     }

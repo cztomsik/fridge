@@ -100,18 +100,7 @@ pub fn Pool(comptime T: type) type {
             for (pconns.items) |*pconn| {
                 while (!pconn.available) {
                     // Wait up to 5 seconds and then close the connection forcefully
-                    const U = union(enum) {
-                        signal: std.Io.Cancelable!void,
-                        sleep: std.Io.Cancelable!void,
-                    };
-                    var buffer: [2]U = undefined;
-                    var wait_select: std.Io.Select(U) = .init(self.io, &buffer);
-                    wait_select.async(.signal, std.Io.Condition.wait, .{ &self.wait, self.io, &self.mutex });
-                    wait_select.async(.sleep, std.Io.sleep, .{ self.io, std.Io.Duration.fromSeconds(5), std.Io.Clock.awake });
-                    // Wait for one of them to finish
-                    _ = wait_select.await() catch unreachable;
-                    // Cancel the other ones
-                    wait_select.cancelDiscard();
+                    self.wait.waitTimeout(self.io, &self.mutex, .{ .duration = .{ .raw = .fromSeconds(5), .clock = .awake } }) catch break;
                 }
 
                 pconn.conn.deinit();
