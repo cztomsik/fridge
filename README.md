@@ -6,11 +6,11 @@ more.
 
 ## Features
 
-- [x] Supports both bundling SQLite3 with your app or linking system SQLite3.
-- [x] Type-safe + raw query builder.
-- [x] Connection pool.
-- [x] Shortcuts for common tasks.
-- [x] **Migrations** inspired by [David Röthlisberger](https://david.rothlis.net/declarative-schema-migration-for-sqlite/).
+- [X] Supports both bundling SQLite3 with your app or linking system SQLite3.
+- [X] Type-safe + raw query builder.
+- [X] Connection pool.
+- [X] Shortcuts for common tasks.
+- [X] **Migrations** inspired by [David Röthlisberger](https://david.rothlis.net/declarative-schema-migration-for-sqlite/).
 - [ ] Additional drivers (e.g., PostgreSQL).
 - [ ] Documentation.
 
@@ -83,7 +83,7 @@ Next, let's insert some data. Since this is a common operation, there's a
 convenient shorthand:
 
 ```zig
-try db.insert(User, .{
+_ = try db.insert(User, .{
     .name = "Alice",
     .role = "admin",
 });
@@ -92,7 +92,7 @@ try db.insert(User, .{
 Alternatively, you could also use the query builder directly:
 
 ```zig
-try db.query(User).insert(.{
+const result = db.query(User).insert(.{
     .name = "Bob",
     .role = "user",
 });

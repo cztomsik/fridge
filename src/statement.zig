@@ -50,9 +50,9 @@ pub const Statement = extern struct {
                 }
             },
             .@"struct" => |s| {
-                inline for (s.field_names, s.field_types, 0..) |f, ft, i| {
+                inline for (s.fields,  0..) |f,  i| {
                     const val = try self.column(i);
-                    @field(res, f) = try val.into(ft, arena);
+                    @field(res, f.name) = try val.into(f.type, arena);
                 }
             },
             else => {

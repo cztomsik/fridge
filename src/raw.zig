@@ -253,8 +253,8 @@ pub const RawQuery = struct {
 
         var args: std.ArrayList(Value) = .empty;
 
-        inline for (@typeInfo(@TypeOf(self.parts)).@"struct".field_names) |f| {
-            if (@field(self.parts, f)) |p| {
+        inline for (@typeInfo(@TypeOf(self.parts)).@"struct".fields) |f| {
+            if (@field(self.parts, f.name)) |p| {
                 try args.ensureUnusedCapacity(self.db.arena, p.countArgs());
                 p.collectArgsInto(&args);
             }
@@ -304,9 +304,9 @@ const Args = union(enum) {
     }
 
     fn fromFields(args: anytype, db: *Session) Args {
-        const fields = @typeInfo(@TypeOf(args)).@"struct".field_names;
+        const fields = @typeInfo(@TypeOf(args)).@"struct".fields;
         const res = db.arena.alloc(Value, fields.len) catch @panic("OOM");
-        inline for (fields, 0..) |f, i| res[i] = Value.from(@field(args, f), db.arena) catch @panic("OOM");
+        inline for (fields, 0..) |f, i| res[i] = Value.from(@field(args, f.name), db.arena) catch @panic("OOM");
 
         return .{ .many = res };
     }

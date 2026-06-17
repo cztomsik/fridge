@@ -68,9 +68,9 @@ pub fn columns(comptime T: type) []const u8 {
     return comptime brk: {
         var res: []const u8 = "";
 
-        for (@typeInfo(T).@"struct".field_names) |f| {
+        for (@typeInfo(T).@"struct".fields) |f| {
             if (res.len > 0) res = res ++ ", ";
-            res = res ++ f;
+            res = res ++ f.name;
         }
 
         break :brk res;
@@ -81,7 +81,7 @@ pub fn placeholders(comptime T: type) []const u8 {
     return comptime brk: {
         var res: []const u8 = "";
 
-        for (@typeInfo(T).@"struct".field_names) |_| {
+        for (@typeInfo(T).@"struct".fields) |_| {
             if (res.len > 0) res = res ++ ", ";
             res = res ++ "?";
         }
@@ -94,9 +94,9 @@ pub fn setters(comptime T: type) []const u8 {
     return comptime brk: {
         var res: []const u8 = "";
 
-        for (@typeInfo(T).@"struct".field_names) |f| {
+        for (@typeInfo(T).@"struct".fields) |f| {
             if (res.len > 0) res = res ++ ", ";
-            res = res ++ f ++ " = ?";
+            res = res ++ f.name ++ " = ?";
         }
 
         break :brk res;
@@ -121,8 +121,8 @@ pub fn isString(comptime T: type) bool {
 }
 
 pub fn isDense(comptime E: type) bool {
-    for (@typeInfo(E).@"enum".field_names, 0..) |f, i| {
-        if (@intFromEnum(@field(E, f)) != i) return false;
+    for (@typeInfo(E).@"enum".fields, 0..) |f, i| {
+        if (@intFromEnum(@field(E, f.name)) != i) return false;
     }
 
     return true;
@@ -145,17 +145,17 @@ pub fn isJsonRepresentable(comptime T: type) bool {
 
 pub fn checkFields(comptime T: type, comptime D: type) void {
     comptime {
-        outer: for (@typeInfo(D).@"struct".field_names, @typeInfo(D).@"struct".field_types) |f, ft| {
-            for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |f2, ft2| {
-                if (std.mem.eql(u8, f, f2)) {
-                    if (isAssignableTo(ft, ft2)) {
+        outer: for (@typeInfo(D).@"struct".fields) |f| {
+            for (@typeInfo(T).@"struct".fields) |f2| {
+                if (std.mem.eql(u8, f.name, f2.name)) {
+                    if (isAssignableTo(f.type, f2.type)) {
                         continue :outer;
                     }
 
                     @compileError(
-                        "Type mismatch for field " ++ f ++
-                            " found:" ++ @typeName(ft) ++
-                            " expected:" ++ @typeName(ft2),
+                        "Type mismatch for field " ++ f.name ++
+                            " found:" ++ @typeName(f.type) ++
+                            " expected:" ++ @typeName(f2.type),
                     );
                 }
             }
@@ -198,18 +198,18 @@ pub fn upcast(handle: anytype, comptime T: type) T {
 
             // Check the types first.
             var impl: T.VTable(Handle) = undefined;
-            for (@typeInfo(@TypeOf(impl)).@"struct".field_names) |f| {
-                if (std.meta.hasFn(Impl, f)) {
-                    @field(impl, f) = @field(Impl, f);
+            for (@typeInfo(@TypeOf(impl)).@"struct".fields) |f| {
+                if (std.meta.hasFn(Impl, f.name)) {
+                    @field(impl, f.name) = @field(Impl, f.name);
                 } else {
-                    @compileError("Impl " ++ @typeName(Impl) ++ " is missing " ++ f);
+                    @compileError("Impl " ++ @typeName(Impl) ++ " is missing " ++ f.name);
                 }
             }
 
             // Get erased vtable.
             var res: T.VTable(*anyopaque) = undefined;
-            for (@typeInfo(@TypeOf(res)).@"struct".field_names) |f| {
-                @field(res, f) = @ptrCast(@field(impl, f));
+            for (@typeInfo(@TypeOf(res)).@"struct".fields) |f| {
+                @field(res, f.name) = @ptrCast(@field(impl, f.name));
             }
 
             const copy = res;
