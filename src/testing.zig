@@ -2,6 +2,9 @@ const std = @import("std");
 const Connection = @import("connection.zig").Connection;
 const Session = @import("session.zig").Session;
 const Statement = @import("statement.zig").Statement;
+const Value = @import("value.zig").Value;
+const Error = @import("error.zig").Error;
+const util = @import("util.zig");
 const SqlBuf = @import("sql.zig").SqlBuf;
 
 pub fn createDb(ddl: []const u8) !Session {
@@ -54,7 +57,7 @@ pub const TestConn = struct {
 
     pub fn prepare(_: *TestConn, sql: []const u8) !Statement {
         last_sql = sql;
-        return undefined;
+        return util.upcast(@as(*TestStmt, undefined), Statement);
     }
 
     pub fn rowsAffected(_: *TestConn) !usize {
@@ -73,4 +76,28 @@ pub const TestConn = struct {
         std.testing.allocator.destroy(self);
         _ = destroyed.fetchAdd(1, .monotonic);
     }
+};
+
+const TestStmt = struct {
+    pub fn bind(_: *TestStmt, _: usize, _: Value) Error!void {}
+
+    pub fn columnCount(_: *TestStmt) usize {
+        return 0;
+    }
+
+    pub fn columnName(_: *TestStmt, _: usize) []const u8 {
+        return "";
+    }
+
+    pub fn column(_: *TestStmt, _: usize) Error!Value {
+        return .null;
+    }
+
+    pub fn step(_: *TestStmt) Error!bool {
+        return false;
+    }
+
+    pub fn reset(_: *TestStmt) Error!void {}
+
+    pub fn deinit(_: *TestStmt) void {}
 };

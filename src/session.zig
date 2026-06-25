@@ -5,6 +5,7 @@ const Connection = @import("connection.zig").Connection;
 const Pool = @import("pool.zig").Pool;
 const Statement = @import("statement.zig").Statement;
 const RawQuery = @import("raw.zig").RawQuery;
+const Part = @import("raw.zig").Part;
 const Query = @import("query.zig").Query;
 const Value = @import("value.zig").Value;
 const Schema = @import("schema.zig").Schema;
@@ -12,6 +13,7 @@ const Schema = @import("schema.zig").Schema;
 pub const Session = struct {
     arena: std.mem.Allocator,
     conn: Connection,
+    parts: std.ArrayList(Part) = .empty,
 
     /// Generic shorthand for `Session.init(T.open(allocator, io, options))`
     pub fn open(comptime T: type, allocator: std.mem.Allocator, io: std.Io, options: T.Options) !Session {

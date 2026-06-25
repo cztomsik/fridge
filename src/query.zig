@@ -14,7 +14,7 @@ pub fn Query(comptime T: type) type {
         const Col = std.meta.FieldEnum(T);
 
         pub fn init(db: *Session) Q {
-            return .{ .raw = RawQuery.init(db).select(util.columns(T)).table(util.tableName(T)) };
+            return .{ .raw = RawQuery.init(db).table(util.tableName(T)) };
         }
 
         pub fn from(self: Q, sql: []const u8) Q {
@@ -106,11 +106,11 @@ pub fn Query(comptime T: type) type {
         }
 
         pub fn findOne(self: Q) !?T {
-            return self.raw.fetchOne(T);
+            return self.raw.select(util.columns(T)).fetchOne(T);
         }
 
         pub fn findAll(self: Q) ![]const T {
-            return self.raw.fetchAll(T);
+            return self.raw.select(util.columns(T)).fetchAll(T);
         }
 
         pub fn select(self: Q, sql: []const u8) RawQuery {
@@ -161,8 +161,8 @@ test "query" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person),
-        "SELECT id, name, age FROM Person",
+        db.query(Person).select("*"),
+        "SELECT * FROM Person",
     );
 }
 
@@ -177,7 +177,7 @@ test "query.select()" {
 
     try expectSql(
         db.query(Person).select("name").select("age"),
-        "SELECT age FROM Person",
+        "SELECT name, age FROM Person",
     );
 
     try expectSql(
@@ -191,8 +191,8 @@ test "query.join()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).join("Address ON Person.id = Address.person_id"),
-        "SELECT id, name, age FROM Person JOIN Address ON Person.id = Address.person_id",
+        db.query(Person).join("Address ON Person.id = Address.person_id").select("*"),
+        "SELECT * FROM Person JOIN Address ON Person.id = Address.person_id",
     );
 }
 
@@ -201,49 +201,49 @@ test "query.where()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).where("name", "Alice"),
-        "SELECT id, name, age FROM Person WHERE name = ?",
+        db.query(Person).where("name", "Alice").select("*"),
+        "SELECT * FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).where("age > ?", 18),
-        "SELECT id, name, age FROM Person WHERE age > ?",
+        db.query(Person).where("age > ?", 18).select("*"),
+        "SELECT * FROM Person WHERE age > ?",
     );
 
     try expectSql(
-        db.query(Person).where("name", "Alice").where("age", 20),
-        "SELECT id, name, age FROM Person WHERE name = ? AND age = ?",
+        db.query(Person).where("name", "Alice").where("age", 20).select("*"),
+        "SELECT * FROM Person WHERE name = ? AND age = ?",
     );
 
     try expectSql(
-        db.query(Person).whereRaw("name = ?", "Alice").whereRaw("age > ?", 20),
-        "SELECT id, name, age FROM Person WHERE name = ? AND age > ?",
+        db.query(Person).whereRaw("name = ?", "Alice").whereRaw("age > ?", 20).select("*"),
+        "SELECT * FROM Person WHERE name = ? AND age > ?",
     );
 
     try expectSql(
-        db.query(Person).ifWhere(false, "name", "Alice"),
-        "SELECT id, name, age FROM Person",
+        db.query(Person).ifWhere(false, "name", "Alice").select("*"),
+        "SELECT * FROM Person",
     );
 
     try expectSql(
-        db.query(Person).ifWhere(true, "name", "Alice"),
-        "SELECT id, name, age FROM Person WHERE name = ?",
+        db.query(Person).ifWhere(true, "name", "Alice").select("*"),
+        "SELECT * FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).maybeWhere("name", null),
-        "SELECT id, name, age FROM Person",
+        db.query(Person).maybeWhere("name", null).select("*"),
+        "SELECT * FROM Person",
     );
 
     try expectSql(
         // Check that arg type is "flat" optional even for opt columns
-        db.query(Person).maybeWhere("id", @as(?u32, null)),
-        "SELECT id, name, age FROM Person",
+        db.query(Person).maybeWhere("id", @as(?u32, null)).select("*"),
+        "SELECT * FROM Person",
     );
 
     try expectSql(
-        db.query(Person).maybeWhere("name", "Alice"),
-        "SELECT id, name, age FROM Person WHERE name = ?",
+        db.query(Person).maybeWhere("name", "Alice").select("*"),
+        "SELECT * FROM Person WHERE name = ?",
     );
 }
 
@@ -252,43 +252,43 @@ test "query.orWhere()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).orWhere("name", "Alice"),
-        "SELECT id, name, age FROM Person WHERE name = ?",
+        db.query(Person).orWhere("name", "Alice").select("*"),
+        "SELECT * FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).orWhere("age > ?", 18),
-        "SELECT id, name, age FROM Person WHERE age > ?",
+        db.query(Person).orWhere("age > ?", 18).select("*"),
+        "SELECT * FROM Person WHERE age > ?",
     );
 
     try expectSql(
-        db.query(Person).where("name", "Alice").orWhere("age", 20),
-        "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
+        db.query(Person).where("name", "Alice").orWhere("age", 20).select("*"),
+        "SELECT * FROM Person WHERE name = ? OR age = ?",
     );
 
     try expectSql(
-        db.query(Person).whereRaw("name = ?", "Alice").orWhereRaw("age > ?", 20),
-        "SELECT id, name, age FROM Person WHERE name = ? OR age > ?",
+        db.query(Person).whereRaw("name = ?", "Alice").orWhereRaw("age > ?", 20).select("*"),
+        "SELECT * FROM Person WHERE name = ? OR age > ?",
     );
 
     try expectSql(
-        db.query(Person).where("name", "Alice").orIfWhere(false, "age", 20),
-        "SELECT id, name, age FROM Person WHERE name = ?",
+        db.query(Person).where("name", "Alice").orIfWhere(false, "age", 20).select("*"),
+        "SELECT * FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).where("name", "Alice").orIfWhere(true, "age", 20),
-        "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
+        db.query(Person).where("name", "Alice").orIfWhere(true, "age", 20).select("*"),
+        "SELECT * FROM Person WHERE name = ? OR age = ?",
     );
 
     try expectSql(
-        db.query(Person).where("name", "Alice").orMaybeWhere("age", null),
-        "SELECT id, name, age FROM Person WHERE name = ?",
+        db.query(Person).where("name", "Alice").orMaybeWhere("age", null).select("*"),
+        "SELECT * FROM Person WHERE name = ?",
     );
 
     try expectSql(
-        db.query(Person).where("name", "Alice").orMaybeWhere("age", 20),
-        "SELECT id, name, age FROM Person WHERE name = ? OR age = ?",
+        db.query(Person).where("name", "Alice").orMaybeWhere("age", 20).select("*"),
+        "SELECT * FROM Person WHERE name = ? OR age = ?",
     );
 }
 
@@ -298,13 +298,13 @@ test "query.groupBy()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).groupBy("name"),
-        "SELECT id, name, age FROM Person GROUP BY name",
+        db.query(Person).groupBy("name").select("*"),
+        "SELECT * FROM Person GROUP BY name",
     );
 
     try expectSql(
-        db.query(Person).groupBy("name").groupBy("age"),
-        "SELECT id, name, age FROM Person GROUP BY name, age",
+        db.query(Person).groupBy("name").groupBy("age").select("*"),
+        "SELECT * FROM Person GROUP BY name, age",
     );
 }
 
@@ -313,13 +313,13 @@ test "query.orderBy()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).orderBy(.name, .asc),
-        "SELECT id, name, age FROM Person ORDER BY name asc",
+        db.query(Person).orderBy(.name, .asc).select("*"),
+        "SELECT * FROM Person ORDER BY name asc",
     );
 
     try expectSql(
-        db.query(Person).orderBy(.name, .asc).orderBy(.age, .desc),
-        "SELECT id, name, age FROM Person ORDER BY name asc, age desc",
+        db.query(Person).orderBy(.name, .asc).orderBy(.age, .desc).select("*"),
+        "SELECT * FROM Person ORDER BY name asc, age desc",
     );
 }
 
@@ -328,8 +328,8 @@ test "query.limit()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).limit(10),
-        "SELECT id, name, age FROM Person LIMIT ?",
+        db.query(Person).limit(10).select("*"),
+        "SELECT * FROM Person LIMIT ?",
     );
 }
 
@@ -338,8 +338,8 @@ test "query.offset()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).offset(10),
-        "SELECT id, name, age FROM Person OFFSET ?",
+        db.query(Person).offset(10).select("*"),
+        "SELECT * FROM Person OFFSET ?",
     );
 }
 
