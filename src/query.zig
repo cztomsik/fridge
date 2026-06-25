@@ -141,10 +141,6 @@ pub fn Query(comptime T: type) type {
             return self.raw.delete();
         }
 
-        pub fn toSql(self: Q, buf: *SqlBuf) !void {
-            return buf.append(self.raw);
-        }
-
         pub fn prepare(self: Q) !Statement {
             return self.raw.prepare();
         }

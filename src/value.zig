@@ -81,11 +81,6 @@ pub const Value = union(enum) {
             },
         };
     }
-
-    pub fn bind(self: Value, stmt: anytype, i: *usize) !void {
-        try stmt.bind(i.*, self);
-        i.* += 1;
-    }
 };
 
 pub const Blob = struct {

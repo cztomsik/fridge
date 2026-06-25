@@ -43,12 +43,6 @@ pub const Statement = extern struct {
         var res: R = undefined;
 
         switch (@typeInfo(@TypeOf(res))) {
-            .array => |a| {
-                inline for (0..a.len) |i| {
-                    const val = try self.column(i);
-                    res[i] = try val.into(a.child, arena);
-                }
-            },
             .@"struct" => |s| {
                 inline for (s.field_names, s.field_types, 0..) |f, ft, i| {
                     const val = try self.column(i);
@@ -67,13 +61,6 @@ pub const Statement = extern struct {
     /// Bind a value to the given index
     pub fn bind(self: *Statement, index: usize, val: Value) !void {
         try self.vtable.bind(self.handle, index, val);
-    }
-
-    /// Bind all values to the statement
-    pub fn bindAll(self: *Statement, args: []const Value) !void {
-        for (args, 0..) |val, i| {
-            try self.bind(i, val);
-        }
     }
 
     /// Get the number of columns in the result set
