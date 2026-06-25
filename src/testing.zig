@@ -19,11 +19,8 @@ pub fn fakeDb() !Session {
 }
 
 pub fn expectSql(q: anytype, expected: []const u8) !void {
-    var buf = try SqlBuf.init(std.testing.allocator);
-    defer buf.deinit();
-
-    try buf.append(q);
-    try std.testing.expectEqualStrings(expected, buf.buf.items);
+    _ = try q.prepare();
+    try std.testing.expectEqualStrings(expected, TestConn.last_sql);
 }
 
 pub fn expectDdl(db: *Session, object_name: []const u8, expected: []const u8) !void {
@@ -40,6 +37,7 @@ pub const TestConn = struct {
 
     pub var created: std.atomic.Value(u32) = .{ .raw = 0 };
     pub var destroyed: std.atomic.Value(u32) = .{ .raw = 0 };
+    pub var last_sql: []const u8 = "";
 
     pub fn open(_: std.mem.Allocator, _: std.Io, _: void) !*TestConn {
         const ptr = try std.testing.allocator.create(TestConn);
@@ -55,8 +53,9 @@ pub const TestConn = struct {
         unreachable;
     }
 
-    pub fn prepare(_: *TestConn, _: []const u8, _: []const Value) !Statement {
-        unreachable;
+    pub fn prepare(_: *TestConn, sql: []const u8, _: []const Value) !Statement {
+        last_sql = sql;
+        return undefined;
     }
 
     pub fn rowsAffected(_: *TestConn) !usize {
