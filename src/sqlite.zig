@@ -95,14 +95,11 @@ pub const SQLite3 = opaque {
         try check(c.sqlite3_exec(self.ptr(), csql, null, null, null));
     }
 
-    pub fn prepare(self: *SQLite3, sql: []const u8, params: []const Value) !Statement {
+    pub fn prepare(self: *SQLite3, sql: []const u8) !Statement {
         var raw_stmt: ?*c.sqlite3_stmt = null;
         try check(c.sqlite3_prepare_v2(self.ptr(), sql.ptr, @intCast(sql.len), &raw_stmt, null));
 
-        var stmt = util.upcast(@as(*Stmt, @ptrCast(raw_stmt.?)), Statement);
-        try stmt.bindAll(params);
-
-        return stmt;
+        return util.upcast(@as(*Stmt, @ptrCast(raw_stmt.?)), Statement);
     }
 
     pub fn rowsAffected(self: *SQLite3) !usize {

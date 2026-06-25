@@ -2,7 +2,6 @@ const std = @import("std");
 const util = @import("util.zig");
 const Connection = @import("connection.zig").Connection;
 const Statement = @import("statement.zig").Statement;
-const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
 
 /// General options for the whole pool.
@@ -134,8 +133,8 @@ fn PoolConnection(comptime T: type) type {
             return check(self.conn.execAll(sql));
         }
 
-        pub fn prepare(self: *PoolConn, sql: []const u8, params: []const Value) !Statement {
-            return check(self.conn.prepare(sql, params));
+        pub fn prepare(self: *PoolConn, sql: []const u8) !Statement {
+            return check(self.conn.prepare(sql));
         }
 
         pub fn rowsAffected(self: *PoolConn) !usize {

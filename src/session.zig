@@ -42,22 +42,10 @@ pub const Session = struct {
         self.conn.deinit();
     }
 
-    pub fn prepare(self: *Session, sql: []const u8, args: anytype) !Statement {
-        const values = try self.arena.alloc(Value, args.len);
-        inline for (0..args.len) |i| {
-            values[i] = try Value.from(args[i], self.arena);
-        }
-
-        return self.conn.prepare(sql, values);
-    }
-
     // TODO: begin/commit/rollback via self.conn.execAll(...)?
 
     pub fn exec(self: *Session, sql: []const u8, args: anytype) !void {
-        var stmt = try self.prepare(sql, args);
-        defer stmt.deinit();
-
-        try stmt.exec();
+        return self.raw(sql, args).exec();
     }
 
     pub fn raw(self: *Session, sql: []const u8, args: anytype) RawQuery {
@@ -116,16 +104,6 @@ const ddl =
     \\INSERT INTO Person (name) VALUES ('Alice');
     \\INSERT INTO Person (name) VALUES ('Bob');
 ;
-
-test "db.prepare()" {
-    var db = try createDb(ddl);
-    defer db.deinit();
-
-    var stmt = try db.prepare("SELECT 1 + ?", .{1});
-    defer stmt.deinit();
-
-    try t.expectEqual(.{2}, stmt.next(struct { u32 }, db.arena));
-}
 
 test "db.exec()" {
     var db = try createDb(ddl);

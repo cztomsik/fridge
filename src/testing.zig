@@ -2,7 +2,6 @@ const std = @import("std");
 const Connection = @import("connection.zig").Connection;
 const Session = @import("session.zig").Session;
 const Statement = @import("statement.zig").Statement;
-const Value = @import("value.zig").Value;
 const SqlBuf = @import("sql.zig").SqlBuf;
 
 pub fn createDb(ddl: []const u8) !Session {
@@ -53,7 +52,7 @@ pub const TestConn = struct {
         unreachable;
     }
 
-    pub fn prepare(_: *TestConn, sql: []const u8, _: []const Value) !Statement {
+    pub fn prepare(_: *TestConn, sql: []const u8) !Statement {
         last_sql = sql;
         return undefined;
     }
