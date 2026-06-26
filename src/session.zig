@@ -13,8 +13,8 @@ const Schema = @import("schema.zig").Schema;
 pub const Session = struct {
     arena: std.mem.Allocator,
     conn: Connection,
-    parts: std.ArrayList(Part) = .empty, // TODO: decide what's a good initial capacity and pre-allocate something
-    args: std.ArrayListUnmanaged(Value) = .empty,
+    parts: std.ArrayList(Part),
+    args: std.ArrayListUnmanaged(Value),
 
     /// Generic shorthand for `Session.init(T.open(allocator, io, options))`
     pub fn open(comptime T: type, allocator: std.mem.Allocator, io: std.Io, options: T.Options) !Session {
@@ -28,10 +28,13 @@ pub const Session = struct {
     pub fn init(allocator: std.mem.Allocator, conn: Connection) !Session {
         const arena = try allocator.create(std.heap.ArenaAllocator);
         arena.* = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
 
         return .{
             .arena = arena.allocator(),
             .conn = conn,
+            .parts = try .initCapacity(arena.allocator(), 64),
+            .args = try .initCapacity(arena.allocator(), 64),
         };
     }
 
