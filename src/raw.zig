@@ -156,7 +156,8 @@ pub const RawQuery = struct {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        return if (try stmt.next(?T, self.db.arena)) |v| v else null;
+        if (!try stmt.step()) return null;
+        return try (try stmt.column(0)).into(?T, self.db.arena);
     }
 
     pub fn exists(self: RawQuery) !bool {
@@ -167,39 +168,63 @@ pub const RawQuery = struct {
         return (try self.select("COUNT(" ++ col ++ ")").get(u64)).?;
     }
 
-    pub fn pluck(self: RawQuery, comptime R: type) ![]const R {
+    pub fn pluck(self: RawQuery, comptime T: type) ![]const T {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        var res = std.array_list.Managed(R).init(self.db.arena);
-        errdefer res.deinit();
-
-        while (try stmt.next(struct { R }, self.db.arena)) |row| {
-            try res.append(row[0]);
+        var res: std.ArrayList(T) = .empty;
+        while (try stmt.step()) {
+            const val = try stmt.column(0);
+            try res.append(self.db.arena, try val.into(T, self.db.arena));
         }
-
-        return res.toOwnedSlice();
+        return res.toOwnedSlice(self.db.arena);
     }
 
-    pub fn fetchOne(self: RawQuery, comptime R: type) !?R {
+    pub fn fetchOne(self: RawQuery, comptime T: type) !?T {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        return stmt.next(R, self.db.arena);
+        if (!try stmt.step()) return null;
+        return try readRow(T, &stmt, self.db.arena);
     }
 
-    pub fn fetchAll(self: RawQuery, comptime R: type) ![]const R {
+    pub fn fetchAll(self: RawQuery, comptime T: type) ![]const T {
         var stmt = try self.prepare();
         defer stmt.deinit();
 
-        var res = std.array_list.Managed(R).init(self.db.arena);
-        errdefer res.deinit();
-
-        while (try stmt.next(R, self.db.arena)) |row| {
-            try res.append(row);
+        var res: std.ArrayList(T) = .empty;
+        while (try stmt.step()) {
+            const item = try readRow(T, &stmt, self.db.arena);
+            try res.append(self.db.arena, item);
         }
 
-        return res.toOwnedSlice();
+        return res.toOwnedSlice(self.db.arena);
+    }
+
+    fn readRow(comptime T: type, stmt: *Statement, arena: std.mem.Allocator) !T {
+        const col_count = stmt.columnCount();
+        var res: T = undefined;
+
+        if (@typeInfo(T).@"struct".is_tuple) {
+            inline for (comptime std.meta.fieldTypes(T), 0..) |ft, idx| {
+                res[idx] = try (try stmt.column(idx)).into(ft, arena);
+            }
+        } else {
+            inline for (comptime std.meta.fieldNames(T), comptime std.meta.fieldTypes(T)) |f, ft| {
+                const idx = findColumnIndex(stmt, col_count, f) orelse return error.MissingColumn;
+                @field(res, f) = try (try stmt.column(idx)).into(ft, arena);
+            }
+        }
+
+        return res;
+    }
+
+    fn findColumnIndex(stmt: *Statement, col_count: usize, name: []const u8) ?usize {
+        for (0..col_count) |i| {
+            if (std.mem.eql(u8, stmt.columnName(i), name)) return i;
+        }
+
+        return null;
     }
 
     pub fn prepare(self: RawQuery) !Statement {

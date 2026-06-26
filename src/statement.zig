@@ -32,32 +32,6 @@ pub const Statement = extern struct {
         }
     }
 
-    /// Returns a single row from the current result set.
-    /// NOTE that the database (ie. SQLite) is free to hold a lock while the
-    /// result set is not completely exhausted!
-    pub fn next(self: *Statement, comptime R: type, arena: std.mem.Allocator) !?R {
-        if (!try self.step()) {
-            return null;
-        }
-
-        var res: R = undefined;
-
-        switch (@typeInfo(@TypeOf(res))) {
-            .@"struct" => |s| {
-                inline for (s.field_names, s.field_types, 0..) |f, ft, i| {
-                    const val = try self.column(i);
-                    @field(res, f) = try val.into(ft, arena);
-                }
-            },
-            else => {
-                const val = try self.column(0);
-                res = try val.into(R, arena);
-            },
-        }
-
-        return res;
-    }
-
     /// Bind a value to the given index
     pub fn bind(self: *Statement, index: usize, val: Value) !void {
         try self.vtable.bind(self.handle, index, val);
