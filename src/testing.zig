@@ -5,7 +5,6 @@ const Statement = @import("statement.zig").Statement;
 const Value = @import("value.zig").Value;
 const Error = @import("error.zig").Error;
 const util = @import("util.zig");
-const SqlBuf = @import("sql.zig").SqlBuf;
 
 pub fn createDb(ddl: []const u8) !Session {
     var db = try Session.open(@import("sqlite.zig").SQLite3, std.testing.allocator, std.testing.io, .{ .filename = ":memory:" });

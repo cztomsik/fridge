@@ -2,7 +2,6 @@ const std = @import("std");
 const Session = @import("session.zig").Session;
 const Value = @import("value.zig").Value;
 const Statement = @import("statement.zig").Statement;
-const SqlBuf = @import("sql.zig").SqlBuf;
 const util = @import("util.zig");
 
 pub const Part = struct {
@@ -10,7 +9,7 @@ pub const Part = struct {
     sql: []const u8 = "",
     args: [2]usize,
 
-    pub const Kind = enum { raw, SELECT, INSERT, UPDATE, DELETE, table, cols, VALUES, SET, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET, @"ON CONFLICT", RETURNING };
+    pub const Kind = enum { raw, ident, SELECT, INSERT, UPDATE, DELETE, table, cols, VALUES, SET, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET, @"ON CONFLICT", RETURNING };
 };
 
 pub const RawQuery = struct {
@@ -24,6 +23,18 @@ pub const RawQuery = struct {
 
     pub fn raw(db: *Session, sql: []const u8, args: anytype) RawQuery {
         return init(db).append(.raw, sql, args);
+    }
+
+    pub fn apply(self: RawQuery, x: anytype) RawQuery {
+        return x.build(self);
+    }
+
+    pub fn appendRaw(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
+        return self.append(.raw, sql, args);
+    }
+
+    pub fn appendIdent(self: RawQuery, name: []const u8) RawQuery {
+        return self.append(.ident, name, {});
     }
 
     pub fn table(self: RawQuery, sql: []const u8) RawQuery {
@@ -205,26 +216,33 @@ pub const RawQuery = struct {
         // Sort
         const H = struct {
             fn lt(_: void, a: *Part, b: *Part) bool {
+                if (a.kind == .raw or a.kind == .ident) return false;
+                if (b.kind == .raw or b.kind == .ident) return false;
                 return @intFromEnum(a.kind) < @intFromEnum(b.kind);
             }
         };
         std.mem.sort(*Part, parts, {}, H.lt);
 
         // Render in sorted order, tracking prev kind for proper separators
-        var buf = try SqlBuf.init(self.db.arena);
+        var aw: std.Io.Writer.Allocating = try .initCapacity(self.db.arena, 256);
+        const w = &aw.writer;
+
         var prev_kind: ?Part.Kind = null;
         for (parts) |part| {
-            if (part.kind != .raw) {
+            if (part.kind == .ident) {
+                try w.printStringEscaped(part.sql);
+                continue;
+            } else if (part.kind != .raw) {
                 const comma = switch (part.kind) {
                     .SELECT, .@"GROUP BY", .@"ORDER BY", .SET => prev_kind != null and prev_kind.? == part.kind,
                     else => false,
                 };
 
-                try buf.append(if (comma) ", " else switch (part.kind) {
+                try w.writeAll(if (comma) ", " else switch (part.kind) {
                     .SELECT => "SELECT ",
                     inline .INSERT, .UPDATE, .DELETE => |t| @tagName(t),
                     .cols => "",
-                    .table => switch (std.ascii.toLower(buf.buf.items[1])) {
+                    .table => switch (std.ascii.toLower(aw.written()[1])) {
                         'e' => " FROM ", // SeLECT, DeLETE
                         'n' => " INTO ", // InSERT
                         else => " ",
@@ -235,11 +253,11 @@ pub const RawQuery = struct {
                 });
             }
 
-            try buf.append(part.sql);
+            try w.writeAll(part.sql);
             prev_kind = part.kind;
         }
 
-        var stmt: Statement = try self.db.conn.prepare(buf.buf.items);
+        var stmt: Statement = try self.db.conn.prepare(aw.written());
         errdefer stmt.deinit();
 
         // Bind args

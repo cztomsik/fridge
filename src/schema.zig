@@ -2,7 +2,7 @@ const std = @import("std");
 const util = @import("util.zig");
 const Value = @import("value.zig").Value;
 const Session = @import("session.zig").Session;
-const SqlBuf = @import("sql.zig").SqlBuf;
+const RawQuery = @import("raw.zig").RawQuery;
 
 pub const Schema = struct {
     db: *Session,
@@ -24,21 +24,17 @@ pub const Schema = struct {
     }
 
     pub fn renameTable(self: Schema, old_name: []const u8, new_name: []const u8) !void {
-        var buf = try SqlBuf.init(self.db.arena);
-        try buf.append("ALTER TABLE ");
-        try buf.appendIdent(old_name);
-        try buf.append(" RENAME TO ");
-        try buf.appendIdent(new_name);
-
-        try self.db.conn.execAll(buf.buf.items);
+        return self.db.raw("ALTER TABLE ", {})
+            .appendIdent(old_name)
+            .appendRaw(" RENAME TO ", {})
+            .appendIdent(new_name)
+            .exec();
     }
 
     pub fn dropTable(self: Schema, name: []const u8) !void {
-        var buf = try SqlBuf.init(self.db.arena);
-        try buf.append("DROP TABLE ");
-        try buf.appendIdent(name);
-
-        try self.db.conn.execAll(buf.buf.items);
+        return self.db.raw("DROP TABLE ", {})
+            .appendIdent(name)
+            .exec();
     }
 };
 
@@ -93,35 +89,33 @@ pub const TableBuilder = struct {
         return self.append("constraints", @unionInit(Constraint, @tagName(kind), body));
     }
 
-    pub fn toSql(self: TableBuilder, buf: *SqlBuf) !void {
-        try buf.append("CREATE TABLE ");
-        try buf.appendIdent(self.table);
-        try buf.append(" (\n  ");
+    pub fn exec(self: *TableBuilder) !void {
+        var q = self.db.raw("CREATE TABLE ", {})
+            .appendIdent(self.table)
+            .appendRaw(" (\n  ", {});
 
         for (self.columns.items, 0..) |col, i| {
-            if (i > 0) try buf.append(",\n  ");
-            try buf.append(col);
+            if (i > 0) q = q.appendRaw(",\n  ", {});
+            q = col.build(q);
         }
 
         // Fixed order
         for (std.meta.tags(std.meta.Tag(Constraint))) |tag| {
             for (self.constraints.items) |con| {
                 if (std.meta.activeTag(con) == tag) {
-                    try buf.append(",\n  ");
-                    try buf.append(con);
+                    q = q.appendRaw(",\n  ", {});
+                    q = con.build(q);
                 }
             }
         }
 
-        if (self.db.conn.dialect() == .sqlite3) {
-            try buf.append("\n) STRICT");
-        }
-    }
+        q = q.appendRaw("\n)", {});
 
-    pub fn exec(self: *TableBuilder) !void {
-        var buf = try SqlBuf.init(self.db.arena);
-        try buf.append(self);
-        try self.db.conn.execAll(buf.buf.items);
+        if (self.db.conn.dialect() == .sqlite3) {
+            q = q.appendRaw(" STRICT", {});
+        }
+
+        return q.exec();
     }
 
     fn append(self: *TableBuilder, comptime slot: []const u8, item: std.meta.Child(@FieldType(TableBuilder, slot).Slice)) *TableBuilder {
@@ -235,20 +229,13 @@ pub const AlterBuilder = struct {
             var tws = try TwelveStep.init(self.db, self.table, self.changes.items);
             try tws.exec();
         } else {
-            var buf = try SqlBuf.init(self.db.arena);
-            try buf.append(self);
-            try self.db.conn.execAll(buf.buf.items);
-        }
-    }
-
-    pub fn toSql(self: AlterBuilder, buf: *SqlBuf) !void {
-        for (self.changes.items, 0..) |ch, i| {
-            if (i > 0) try buf.append(";\n");
-
-            try buf.append("ALTER TABLE ");
-            try buf.appendIdent(self.table);
-            try buf.append(" ");
-            try buf.append(ch);
+            for (self.changes.items) |ch| {
+                try self.db.raw("ALTER TABLE ", {})
+                    .appendIdent(self.table)
+                    .appendRaw(" ", {})
+                    .apply(ch)
+                    .exec();
+            }
         }
     }
 };
@@ -265,59 +252,56 @@ pub const TableChange = union(enum) {
         foreign_key: []const u8,
     },
 
-    pub fn toSql(self: TableChange, buf: *SqlBuf) !void {
-        switch (self) {
+    pub fn build(self: TableChange, q: RawQuery) RawQuery {
+        return switch (self) {
             .add_column => |opts| {
-                try buf.append("ADD COLUMN ");
-                try buf.appendIdent(opts[0]);
-                try buf.append(" ");
-                try buf.append(opts[1]);
+                var r = q.appendRaw("ADD COLUMN ", {})
+                    .appendIdent(opts[0])
+                    .appendRaw(" ", {})
+                    .apply(opts[1]);
 
                 if (!opts[2].nullable) {
-                    try buf.append(" NOT NULL");
+                    r = r.appendRaw(" NOT NULL", {});
                 }
 
                 if (opts[2].default) |def| {
-                    try buf.append(" DEFAULT ");
-                    try buf.append(def);
+                    r = r.appendRaw(" DEFAULT ", {})
+                        .appendRaw(def, {});
                 }
+
+                return r;
             },
-            .rename_column => |names| {
-                try buf.append("RENAME COLUMN ");
-                try buf.appendIdent(names[0]);
-                try buf.append(" TO ");
-                try buf.appendIdent(names[1]);
-            },
-            .drop_column => |name| {
-                try buf.append("DROP COLUMN ");
-                try buf.appendIdent(name);
-            },
-            .add_constraint => |constraint| {
-                try buf.append("ADD CONSTRAINT ");
-                try buf.append(constraint);
-            },
+            .rename_column => |names| q
+                .appendRaw("RENAME COLUMN ", {})
+                .appendIdent(names[0])
+                .appendRaw(" TO ", {})
+                .appendIdent(names[1]),
+            .drop_column => |name| q
+                .appendRaw("DROP COLUMN ", {})
+                .appendIdent(name),
+            .add_constraint => |constraint| constraint.build(
+                q.appendRaw("ADD CONSTRAINT ", {}),
+            ),
             .drop_constraint => |drop| {
-                try buf.append("DROP CONSTRAINT ");
-                switch (drop) {
-                    .primary_key => try buf.append("PRIMARY KEY"),
-                    .unique => |name| {
-                        try buf.append("UNIQUE (");
-                        try buf.append(name);
-                        try buf.append(")");
-                    },
-                    .check => |expr| {
-                        try buf.append("CHECK (");
-                        try buf.append(expr);
-                        try buf.append(")");
-                    },
-                    .foreign_key => |cols| {
-                        try buf.append("FOREIGN KEY (");
-                        try buf.append(cols);
-                        try buf.append(")");
-                    },
-                }
+                var r = q.appendRaw("DROP CONSTRAINT ", {});
+
+                return switch (drop) {
+                    .primary_key => r.appendRaw("PRIMARY KEY", {}),
+                    .unique => |name| r
+                        .appendRaw("UNIQUE (", {})
+                        .appendRaw(name, {})
+                        .appendRaw(")", {}),
+                    .check => |expr| r
+                        .appendRaw("CHECK (", {})
+                        .appendRaw(expr, {})
+                        .appendRaw(")", {}),
+                    .foreign_key => |cols| r
+                        .appendRaw("FOREIGN KEY (", {})
+                        .appendRaw(cols, {})
+                        .appendRaw(")", {}),
+                };
             },
-        }
+        };
     }
 };
 
@@ -327,19 +311,21 @@ pub const Column = struct {
     not_null: bool,
     default: ?[]const u8,
 
-    pub fn toSql(self: Column, buf: *SqlBuf) !void {
-        try buf.append(self.name); // TODO: should be appendIdent() but we probably don't want to quote unless necessary
-        try buf.append(" ");
-        try buf.append(self.type);
+    pub fn build(self: Column, q: RawQuery) RawQuery {
+        var r = q.appendRaw(self.name, {})
+            .appendRaw(" ", {})
+            .apply(self.type);
 
         if (self.not_null) {
-            try buf.append(" NOT NULL");
+            r = r.appendRaw(" NOT NULL", {});
         }
 
         if (self.default) |def| {
-            try buf.append(" DEFAULT ");
-            try buf.append(def);
+            r = r.appendRaw(" DEFAULT ", {})
+                .appendRaw(def, {});
         }
+
+        return r;
     }
 };
 
@@ -349,11 +335,11 @@ pub const ColumnType = enum {
 
     pub const int = ColumnType.integer;
 
-    pub fn toSql(self: ColumnType, buf: *SqlBuf) !void {
-        try buf.append(switch (self) {
+    pub fn build(self: ColumnType, q: RawQuery) RawQuery {
+        return q.appendRaw(switch (self) {
             .integer => "INTEGER",
             .text => "TEXT",
-        });
+        }, {});
     }
 };
 
@@ -386,22 +372,20 @@ pub const Constraint = union(enum) {
             std.mem.startsWith(u8, cols, col);
     }
 
-    pub fn toSql(self: Constraint, buf: *SqlBuf) !void {
-        try buf.append(switch (self) {
+    pub fn build(self: Constraint, q: RawQuery) RawQuery {
+        var r = q.appendRaw(switch (self) {
             .primary_key => "PRIMARY KEY",
             .unique => "UNIQUE",
             .check => "CHECK",
             .foreign_key => "FOREIGN KEY",
-        });
+        }, {});
 
-        switch (self) {
-            .foreign_key => |fk| try buf.append(fk),
-            inline else => |v| {
-                try buf.append(" (");
-                try buf.append(v);
-                try buf.append(")");
-            },
-        }
+        return switch (self) {
+            .foreign_key => |fk| fk.build(r),
+            inline else => |v| r.appendRaw(" (", {})
+                .appendRaw(v, {})
+                .appendRaw(")", {}),
+        };
     }
 };
 
@@ -422,24 +406,26 @@ const Fk = struct {
         };
     }
 
-    pub fn toSql(self: Fk, buf: *SqlBuf) !void {
-        try buf.append(" (");
-        try buf.append(self.cols);
-        try buf.append(") REFERENCES ");
-        try buf.append(self.ref_table);
-        try buf.append(" (");
-        try buf.append(self.ref_cols);
-        try buf.append(")");
+    pub fn build(self: Fk, q: RawQuery) RawQuery {
+        var r = q.appendRaw(" (", {})
+            .appendRaw(self.cols, {})
+            .appendRaw(") REFERENCES ", {})
+            .appendRaw(self.ref_table, {})
+            .appendRaw(" (", {})
+            .appendRaw(self.ref_cols, {})
+            .appendRaw(")", {});
 
         if (self.on_update != .no_action) {
-            try buf.append(" ON UPDATE ");
-            try buf.append(self.on_update);
+            r = r.appendRaw(" ON UPDATE ", {})
+                .apply(self.on_update);
         }
 
         if (self.on_delete != .no_action) {
-            try buf.append(" ON DELETE ");
-            try buf.append(self.on_delete);
+            r = r.appendRaw(" ON DELETE ", {})
+                .apply(self.on_delete);
         }
+
+        return r;
     }
 };
 
@@ -466,14 +452,14 @@ pub const FkAction = enum {
         return error.InvalidEnumTag;
     }
 
-    pub fn toSql(self: FkAction, buf: *SqlBuf) !void {
-        try buf.append(switch (self) {
+    pub fn build(self: FkAction, q: RawQuery) RawQuery {
+        return q.appendRaw(switch (self) {
             .set_null => "SET NULL",
             .set_default => "SET DEFAULT",
             .cascade => "CASCADE",
             .restrict => "RESTRICT",
             .no_action => "NO ACTION",
-        });
+        }, {});
     }
 };
 
@@ -515,7 +501,7 @@ pub const TwelveStep = struct {
         }
 
         // UNIQUE
-        for (try db.raw("SELECT group_concat(c.name, ',') FROM pragma_index_list(?) i JOIN pragma_index_info(i.name) c WHERE i.\"unique\" = 1 GROUP BY i.name", table).fetchAll([]const u8)) |uq_cols| {
+        for (try db.raw("SELECT group_concat(c.name, ',') FROM pragma_index_list(?) i JOIN pragma_index_info(i.name) c WHERE i.\"unique\" = 1 GROUP BY i.name", table).pluck([]const u8)) |uq_cols| {
             _ = state.addConstraint(.unique, uq_cols);
         }
 
@@ -639,10 +625,9 @@ pub const TwelveStep = struct {
     }
 
     fn copyData(self: *TwelveStep, change: TableChange) !void {
-        var buf = try SqlBuf.init(self.db.arena);
-        try buf.append("INSERT INTO ");
-        try buf.appendIdent(self.state.table);
-        try buf.append(" (");
+        var q = self.db.raw("INSERT INTO ", {})
+            .appendIdent(self.state.table)
+            .appendRaw(" (", {});
 
         var i: usize = 0;
         for (self.state.columns.items) |col| {
@@ -650,12 +635,12 @@ pub const TwelveStep = struct {
                 continue;
             }
 
-            if (i > 0) try buf.append(", ");
-            try buf.appendIdent(col.name);
+            if (i > 0) q = q.appendRaw(", ", {});
+            q = q.appendRaw(col.name, {});
             i += 1;
         }
 
-        try buf.append(") SELECT ");
+        q = q.appendRaw(") SELECT ", {});
 
         var j: usize = 0;
         for (self.state.columns.items) |col| {
@@ -668,15 +653,15 @@ pub const TwelveStep = struct {
             else
                 col.name;
 
-            if (j > 0) try buf.append(", ");
-            try buf.appendIdent(col_name);
+            if (j > 0) q = q.appendRaw(", ", {});
+            q = q.appendRaw(col_name, {});
             j += 1;
         }
 
-        try buf.append(" FROM ");
-        try buf.appendIdent(self.table);
+        q = q.appendRaw(" FROM ", {})
+            .appendIdent(self.table);
 
-        try self.db.conn.execAll(buf.buf.items);
+        try q.exec();
     }
 };
 
