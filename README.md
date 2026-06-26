@@ -1,5 +1,8 @@
 # Fridge
 
+> I've been doing some breaking changes recently and I'm not done yet so maybe
+> consider staying on `7731bfd7a220482827f7006e0ac6ab641fc41381` for now
+
 A small, batteries-included database library for Zig. It offers a type-safe
 query builder, connection pooling, shorthands for common tasks, migrations, and
 more.
