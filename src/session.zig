@@ -13,7 +13,8 @@ const Schema = @import("schema.zig").Schema;
 pub const Session = struct {
     arena: std.mem.Allocator,
     conn: Connection,
-    parts: std.ArrayList(Part) = .empty,
+    parts: std.ArrayList(Part) = .empty, // TODO: decide what's a good initial capacity and pre-allocate something
+    args: std.ArrayListUnmanaged(Value) = .empty,
 
     /// Generic shorthand for `Session.init(T.open(allocator, io, options))`
     pub fn open(comptime T: type, allocator: std.mem.Allocator, io: std.Io, options: T.Options) !Session {
@@ -32,6 +33,27 @@ pub const Session = struct {
             .arena = arena.allocator(),
             .conn = conn,
         };
+    }
+
+    /// Push query arguments to the session's args buffer and return the [begin, end) range.
+    /// Structs and tuples are unpacked field-by-field.
+    pub fn pushArgs(self: *Session, args: anytype) ![2]usize {
+        const T = @TypeOf(args);
+
+        switch (@typeInfo(T)) {
+            .void => return @splat(0),
+            .@"struct" => |s| {
+                const begin = self.args.items.len;
+
+                try self.args.ensureUnusedCapacity(self.arena, s.field_names.len);
+                inline for (s.field_names) |f| {
+                    self.args.appendAssumeCapacity(try Value.from(@field(args, f), self.arena));
+                }
+
+                return .{ begin, begin + s.field_names.len };
+            },
+            else => return self.pushArgs(.{args}),
+        }
     }
 
     /// Close the session (including the connection)

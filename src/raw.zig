@@ -8,7 +8,7 @@ const util = @import("util.zig");
 pub const Part = struct {
     kind: Kind,
     sql: []const u8 = "",
-    args: Args = .none,
+    args: [2]usize,
 
     pub const Kind = enum { raw, SELECT, INSERT, UPDATE, DELETE, table, cols, VALUES, SET, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET, @"ON CONFLICT", RETURNING };
 };
@@ -23,37 +23,37 @@ pub const RawQuery = struct {
     }
 
     pub fn raw(db: *Session, sql: []const u8, args: anytype) RawQuery {
-        return init(db).append(.raw, sql, .from(args, db));
+        return init(db).append(.raw, sql, args);
     }
 
     pub fn table(self: RawQuery, sql: []const u8) RawQuery {
-        return self.append(.table, sql, .none);
+        return self.append(.table, sql, {});
     }
 
     pub fn insert(self: RawQuery) RawQuery {
-        return self.append(.INSERT, "", .none);
+        return self.append(.INSERT, "", {});
     }
 
     pub const into = table;
 
     pub fn cols(self: RawQuery, sql: []const u8) RawQuery {
-        return self.append(.cols, sql, .none);
+        return self.append(.cols, sql, {});
     }
 
     pub fn values(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
-        return self.append(.VALUES, sql, .fromFields(args, self.db));
+        return self.append(.VALUES, sql, args);
     }
 
     pub fn onConflict(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
-        return self.append(.@"ON CONFLICT", sql, .from(args, self.db));
+        return self.append(.@"ON CONFLICT", sql, args);
     }
 
     pub fn update(self: RawQuery) RawQuery {
-        return self.append(.UPDATE, "", .none);
+        return self.append(.UPDATE, "", {});
     }
 
     pub fn set(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
-        return self.append(.SET, sql, .from(args, self.db));
+        return self.append(.SET, sql, args);
     }
 
     pub fn setAll(self: RawQuery, data: anytype) RawQuery {
@@ -61,11 +61,11 @@ pub const RawQuery = struct {
             return self;
         }
 
-        return self.append(.SET, util.setters(@TypeOf(data)), .fromFields(data, self.db));
+        return self.append(.SET, util.setters(@TypeOf(data)), data);
     }
 
     pub fn delete(self: RawQuery) RawQuery {
-        return self.append(.DELETE, "", .none);
+        return self.append(.DELETE, "", {});
     }
 
     pub fn select(self: RawQuery, sql: []const u8) RawQuery {
@@ -73,22 +73,21 @@ pub const RawQuery = struct {
     }
 
     pub fn selectRaw(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
-        return self.append(.SELECT, sql, .from(args, self.db));
+        return self.append(.SELECT, sql, args);
     }
 
     pub const from = table;
 
     pub fn join(self: RawQuery, sql: []const u8) RawQuery {
-        return self.append(.JOIN, sql, .none);
+        return self.append(.JOIN, sql, {});
     }
 
     pub fn leftJoin(self: RawQuery, sql: []const u8) RawQuery {
-        return self.append(.@"LEFT JOIN", sql, .none);
+        return self.append(.@"LEFT JOIN", sql, {});
     }
 
     pub fn where(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
-        // TODO: emit WHERE/AND in toSql()
-        return self.append(.WHERE, sql, .from(args, self.db));
+        return self.append(.WHERE, sql, args);
     }
 
     pub fn ifWhere(self: RawQuery, cond: bool, sql: []const u8, args: anytype) RawQuery {
@@ -100,8 +99,7 @@ pub const RawQuery = struct {
     }
 
     pub fn orWhere(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
-        // TODO: emit WHERE/OR in toSql()
-        return self.append(.OR, sql, .from(args, self.db));
+        return self.append(.OR, sql, args);
     }
 
     pub fn orIfWhere(self: RawQuery, cond: bool, sql: []const u8, args: anytype) RawQuery {
@@ -113,27 +111,27 @@ pub const RawQuery = struct {
     }
 
     pub fn groupBy(self: RawQuery, sql: []const u8) RawQuery {
-        return self.append(.@"GROUP BY", sql, .none);
+        return self.append(.@"GROUP BY", sql, {});
     }
 
     pub fn having(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
-        return self.append(.HAVING, sql, .from(args, self.db));
+        return self.append(.HAVING, sql, args);
     }
 
     pub fn orderBy(self: RawQuery, sql: []const u8) RawQuery {
-        return self.append(.@"ORDER BY", sql, .none);
+        return self.append(.@"ORDER BY", sql, {});
     }
 
     pub fn limit(self: RawQuery, n: i32) RawQuery {
-        return self.append(.LIMIT, "?", .{ .one = .{ .int = @intCast(n) } });
+        return self.append(.LIMIT, "?", n);
     }
 
     pub fn offset(self: RawQuery, i: i32) RawQuery {
-        return self.append(.OFFSET, "?", .{ .one = .{ .int = @intCast(i) } });
+        return self.append(.OFFSET, "?", i);
     }
 
     pub fn returning(self: RawQuery, sql: []const u8) RawQuery {
-        return self.append(.RETURNING, sql, .none);
+        return self.append(.RETURNING, sql, {});
     }
 
     pub fn exec(self: RawQuery) !void {
@@ -246,56 +244,24 @@ pub const RawQuery = struct {
 
         // Bind args
         var i: usize = 0;
-        for (parts) |part| try part.args.bind(&stmt, &i);
+        for (parts) |part| {
+            for (self.db.args.items[part.args[0]..part.args[1]]) |arg| {
+                try stmt.bind(i, arg);
+                i += 1;
+            }
+        }
 
         return stmt;
     }
 
-    pub fn append(self: RawQuery, kind: Part.Kind, sql: []const u8, args: Args) RawQuery {
+    pub fn append(self: RawQuery, kind: Part.Kind, sql: []const u8, args: anytype) RawQuery {
         const bit = self.db.parts.items.len - self.begin;
-        self.db.parts.append(self.db.arena, .{ .kind = kind, .sql = sql, .args = args }) catch @panic("OOM");
+        const args_range = self.db.pushArgs(args) catch @panic("OOM/error"); // TODO: introduce Value.error?
+        // TODO: we could use mask=0 to track OOM queries and return error.OutOfMemory in prepare()
+        self.db.parts.append(self.db.arena, .{ .kind = kind, .sql = sql, .args = args_range }) catch @panic("OOM");
         var copy = self;
         copy.mask |= @as(u64, 1) << @intCast(bit);
         return copy;
-    }
-};
-
-// TODO: we should either add Session.args and store [begin, end] in the Part,
-//       or we could make Part tagged-union and arg could be one of the variants
-//       in the same list (+add Part.n_args). Either way is probably better than this.
-const Args = union(enum) {
-    none,
-    one: Value,
-    many: []const Value,
-
-    fn from(args: anytype, db: *Session) Args {
-        if (comptime @TypeOf(args) == Args) return args;
-        if (comptime @TypeOf(args) == void) return .none;
-        if (comptime util.isTuple(@TypeOf(args))) return fromFields(args, db);
-
-        return .{ .one = Value.from(args, db.arena) catch @panic("OOM") };
-    }
-
-    fn fromFields(args: anytype, db: *Session) Args {
-        const fields = @typeInfo(@TypeOf(args)).@"struct".field_names;
-        const res = db.arena.alloc(Value, fields.len) catch @panic("OOM");
-        inline for (fields, 0..) |f, i| res[i] = Value.from(@field(args, f), db.arena) catch @panic("OOM");
-
-        return .{ .many = res };
-    }
-
-    fn bind(self: Args, stmt: anytype, i: *usize) !void {
-        switch (self) {
-            .none => {},
-            .one => |arg| {
-                try stmt.bind(i.*, arg);
-                i.* += 1;
-            },
-            .many => |args| for (args) |arg| {
-                try stmt.bind(i.*, arg);
-                i.* += 1;
-            },
-        }
     }
 };
 
