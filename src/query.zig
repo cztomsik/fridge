@@ -168,8 +168,9 @@ const Person = struct {
     age: u8,
 };
 
-const expectSql = @import("testing.zig").expectSql;
 const fakeDb = @import("testing.zig").fakeDb;
+const expectSql = @import("testing.zig").expectSql;
+const expectLastSql = @import("testing.zig").expectLastSql;
 
 test "query" {
     var db = try fakeDb();
@@ -431,4 +432,21 @@ test "query.delete()" {
         db.query(Person).where("age", 20).orWhere("name", "Bob").delete(),
         "DELETE FROM Person WHERE age = ? OR name = ?",
     );
+}
+
+test "query.updateOne/updateAll/deleteOne/deleteAll()" {
+    var db = try fakeDb();
+    defer db.deinit();
+
+    try db.query(Person).where("age", 20).updateOne(.{ .name = "updateOne" });
+    try expectLastSql("UPDATE Person SET name = ? WHERE age = ? LIMIT ?");
+
+    try db.query(Person).where("age", 30).updateAll(.{ .name = "updateAll" });
+    try expectLastSql("UPDATE Person SET name = ? WHERE age = ?");
+
+    try db.query(Person).where("age", 20).deleteOne();
+    try expectLastSql("DELETE FROM Person WHERE age = ? LIMIT ?");
+
+    try db.query(Person).where("age", 30).deleteAll();
+    try expectLastSql("DELETE FROM Person WHERE age = ?");
 }

@@ -21,6 +21,10 @@ pub fn fakeDb() !Session {
 
 pub fn expectSql(q: anytype, expected: []const u8) !void {
     _ = try q.prepare();
+    try expectLastSql(expected);
+}
+
+pub fn expectLastSql(expected: []const u8) !void {
     try std.testing.expectEqualStrings(expected, TestConn.last_sql);
 }
 
