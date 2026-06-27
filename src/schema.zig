@@ -258,7 +258,7 @@ pub const TableChange = union(enum) {
                 var r = q.appendRaw("ADD COLUMN ", {})
                     .appendIdent(opts[0])
                     .appendRaw(" ", {})
-                    .apply(opts[1]);
+                    .appendRaw(opts[1].keyword(), {});
 
                 if (!opts[2].nullable) {
                     r = r.appendRaw(" NOT NULL", {});
@@ -279,9 +279,9 @@ pub const TableChange = union(enum) {
             .drop_column => |name| q
                 .appendRaw("DROP COLUMN ", {})
                 .appendIdent(name),
-            .add_constraint => |constraint| constraint.build(
-                q.appendRaw("ADD CONSTRAINT ", {}),
-            ),
+            .add_constraint => |constraint| q
+                .appendRaw("ADD CONSTRAINT ", {})
+                .apply(constraint),
             .drop_constraint => |drop| {
                 var r = q.appendRaw("DROP CONSTRAINT ", {});
 
@@ -314,7 +314,7 @@ pub const Column = struct {
     pub fn build(self: Column, q: RawQuery) RawQuery {
         var r = q.appendRaw(self.name, {})
             .appendRaw(" ", {})
-            .apply(self.type);
+            .appendRaw(self.type.keyword(), {});
 
         if (self.not_null) {
             r = r.appendRaw(" NOT NULL", {});
@@ -335,11 +335,11 @@ pub const ColumnType = enum {
 
     pub const int = ColumnType.integer;
 
-    pub fn build(self: ColumnType, q: RawQuery) RawQuery {
-        return q.appendRaw(switch (self) {
+    pub fn keyword(self: ColumnType) []const u8 {
+        return switch (self) {
             .integer => "INTEGER",
             .text => "TEXT",
-        }, {});
+        };
     }
 };
 
@@ -381,7 +381,7 @@ pub const Constraint = union(enum) {
         }, {});
 
         return switch (self) {
-            .foreign_key => |fk| fk.build(r),
+            .foreign_key => |fk| r.apply(fk),
             inline else => |v| r.appendRaw(" (", {})
                 .appendRaw(v, {})
                 .appendRaw(")", {}),
@@ -417,12 +417,12 @@ const Fk = struct {
 
         if (self.on_update != .no_action) {
             r = r.appendRaw(" ON UPDATE ", {})
-                .apply(self.on_update);
+                .appendRaw(self.on_update.keyword(), {});
         }
 
         if (self.on_delete != .no_action) {
             r = r.appendRaw(" ON DELETE ", {})
-                .apply(self.on_delete);
+                .appendRaw(self.on_delete.keyword(), {});
         }
 
         return r;
@@ -452,14 +452,14 @@ pub const FkAction = enum {
         return error.InvalidEnumTag;
     }
 
-    pub fn build(self: FkAction, q: RawQuery) RawQuery {
-        return q.appendRaw(switch (self) {
+    pub fn keyword(self: FkAction) []const u8 {
+        return switch (self) {
             .set_null => "SET NULL",
             .set_default => "SET DEFAULT",
             .cascade => "CASCADE",
             .restrict => "RESTRICT",
             .no_action => "NO ACTION",
-        }, {});
+        };
     }
 };
 
