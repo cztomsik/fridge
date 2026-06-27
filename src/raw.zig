@@ -23,7 +23,16 @@ pub const Part = struct {
     sql: []const u8 = "",
     args: [2]usize,
 
-    pub const Kind = enum { raw, ident, SELECT, INSERT, UPDATE, DELETE, table, cols, VALUES, SET, JOIN, @"LEFT JOIN", WHERE, AND, OR, @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET, @"ON CONFLICT", RETURNING };
+    pub const Kind = enum { raw, ident, SELECT, INSERT, UPDATE, DELETE, table, cols, VALUES, SET, JOIN, @"LEFT JOIN", WHERE, OR, @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET, @"ON CONFLICT", RETURNING };
+
+    pub fn order(self: Part) u8 {
+        return switch (self.kind) {
+            .raw, .ident => unreachable,
+            .JOIN, .@"LEFT JOIN" => @intFromEnum(Kind.JOIN),
+            .WHERE, .OR => @intFromEnum(Kind.WHERE),
+            else => |k| @intFromEnum(k),
+        };
+    }
 };
 
 pub const RawQuery = struct {
@@ -258,10 +267,10 @@ pub const RawQuery = struct {
             fn lt(_: void, a: *Part, b: *Part) bool {
                 if (a.kind == .raw or a.kind == .ident) return false;
                 if (b.kind == .raw or b.kind == .ident) return false;
-                return @intFromEnum(a.kind) < @intFromEnum(b.kind);
+                return a.order() < b.order();
             }
         };
-        std.mem.sort(*Part, parts, {}, H.lt);
+        std.sort.insertion(*Part, parts, {}, H.lt);
 
         // Render in sorted order, tracking prev kind for proper separators
         var aw: std.Io.Writer.Allocating = try .initCapacity(self.db.arena, 256);
