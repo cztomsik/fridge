@@ -4,6 +4,20 @@ const Value = @import("value.zig").Value;
 const Statement = @import("statement.zig").Statement;
 const util = @import("util.zig");
 
+// Few notes:
+// - queries are arena-scoped, so an ArrayList(T) is not a good idea (resize)
+// - linked lists were also awkward (and a single list with re-order might be even worse)
+// - so this (session-global list + mask) is a good trade-off IMO
+// - a bounded array could work too, but mask is simpler (builder methods are cheap)
+// - immutability was not a hard constraint, but it comes for free with this design
+// - I am still not 100% sure if re-ordering is worth it, but it's a single pre-render step now
+// - (consecutive) builder methods need to be called in the (sliding) window of 64 parts
+//   - we could probably check last_offset and do a simple copy-on-write (maybe later, IDK)
+// - we currently have 2 separate lists for parts & values; we could probably encode both in
+//   one, but I'm not sure if it's worth it. maybe if Part becomes a tagged union, then this
+//   would make more sense.
+// - this was "invented" on paper — it helps a lot to draw this out
+
 pub const Part = struct {
     kind: Kind,
     sql: []const u8 = "",
