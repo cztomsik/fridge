@@ -225,6 +225,7 @@ pub const RawQuery = struct {
             }
         } else {
             inline for (comptime std.meta.fieldNames(T), comptime std.meta.fieldTypes(T)) |f, ft| {
+                // TODO: this is wrong, we should prepare mapping table once, and then use it for all rows
                 const idx = findColumnIndex(stmt, col_count, f) orelse return error.MissingColumn;
                 @field(res, f) = try (try stmt.column(idx)).into(ft, arena);
             }
