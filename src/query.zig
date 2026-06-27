@@ -136,8 +136,24 @@ pub fn Query(comptime T: type) type {
             return self.raw.update().setAll(data);
         }
 
+        pub fn updateOne(self: Q, data: anytype) !void {
+            return self.update(data).limit(1).exec();
+        }
+
+        pub fn updateAll(self: Q, data: anytype) !void {
+            return self.update(data).exec();
+        }
+
         pub fn delete(self: Q) RawQuery {
             return self.raw.delete();
+        }
+
+        pub fn deleteOne(self: Q) !void {
+            return self.delete().limit(1).exec();
+        }
+
+        pub fn deleteAll(self: Q) !void {
+            return self.delete().exec();
         }
 
         pub fn prepare(self: Q) !Statement {
