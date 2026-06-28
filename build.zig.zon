@@ -13,8 +13,8 @@
 
     .dependencies = .{
         .sqlite_source = .{
-            .url = "https://sqlite.org/2025/sqlite-autoconf-3490100.tar.gz",
-            .hash = "N-V-__8AAPmiwQDYOF242Pnl0pUbyqdyr4Rq43HQqlgvoeZG",
+            .url = "https://sqlite.org/2026/sqlite-autoconf-3530300.tar.gz",
+            .hash = "N-V-__8AAIw5wwBkDrobYflTVStf-53EVVlPT4h64OZW4whp",
         },
     },
 }
