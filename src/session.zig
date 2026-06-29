@@ -76,11 +76,15 @@ pub const Session = struct {
     }
 
     pub fn raw(self: *Session, sql: []const u8, args: anytype) RawQuery {
-        return RawQuery.raw(self, sql, args);
+        return RawQuery.init(self).append(.raw, sql, args);
+    }
+
+    pub fn table(self: *Session, tbl: []const u8) RawQuery {
+        return RawQuery.init(self).withPrefix(.select).table(tbl);
     }
 
     pub fn query(self: *Session, comptime T: type) Query(T) {
-        return .init(self);
+        return .{ .raw = self.table(util.tableName(T)) };
     }
 
     pub fn schema(self: *Session) Schema {
@@ -148,6 +152,14 @@ test "db.raw()" {
     try t.expectEqual(1, try db.raw("SELECT 1", {}).get(u32));
     try t.expectEqual(3, try db.raw("SELECT 1 + ?", 2).get(u32));
     try t.expectEqualSlices(u32, &.{ 1, 2 }, try db.raw("SELECT id FROM Person", {}).pluck(u32));
+}
+
+test "db.table()" {
+    var db = try createDb(ddl);
+    defer db.deinit();
+
+    const people = try db.table("Person").fetchAll(Person);
+    try t.expectEqual(people.len, 2);
 }
 
 test "db.query(T).xxx() value methods" {
