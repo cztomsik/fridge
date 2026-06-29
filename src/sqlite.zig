@@ -17,12 +17,12 @@ pub const SQLite3 = opaque {
         extensions: []const []const u8 = &.{},
     };
 
-    pub fn open(allocator: std.mem.Allocator, io: std.Io, options: Options) !*SQLite3 {
+    pub fn open(io: std.Io, gpa: std.mem.Allocator, options: Options) !*SQLite3 {
         if (options.dir) |dir| {
             if (std.mem.indexOfScalar(u8, options.filename, ':') == null) {
                 std.Io.Dir.cwd().createDirPath(io, dir) catch {};
-                const path = try std.fs.path.joinZ(allocator, &.{ dir, options.filename });
-                defer allocator.free(path);
+                const path = try std.fs.path.joinZ(gpa, &.{ dir, options.filename });
+                defer gpa.free(path);
 
                 return openPath(path, options);
             }

@@ -8,7 +8,7 @@ const Session = @import("session.zig").Session;
 const log = std.log.scoped(.db_migrate);
 
 pub fn migrate(db: *Session, io: std.Io, ddl: []const u8) !void {
-    var pristine = try Session.open(SQLite3, db.arena, io, .{ .filename = ":memory:" });
+    var pristine = try Session.open(SQLite3, io, db.arena, .{ .filename = ":memory:" });
     defer pristine.deinit();
 
     // Create empty database with the desired schema

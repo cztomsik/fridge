@@ -17,17 +17,17 @@ pub const Session = struct {
     args: std.ArrayListUnmanaged(Value),
 
     /// Generic shorthand for `Session.init(T.open(allocator, io, options))`
-    pub fn open(comptime T: type, allocator: std.mem.Allocator, io: std.Io, options: T.Options) !Session {
-        const conn = try Connection.open(T, allocator, io, options);
+    pub fn open(comptime T: type, io: std.Io, gpa: std.mem.Allocator, options: T.Options) !Session {
+        const conn = try Connection.open(T, io, gpa, options);
         errdefer conn.deinit();
 
-        return .init(allocator, conn);
+        return .init(gpa, conn);
     }
 
     /// Create a new session (taking ownership of the connection)
-    pub fn init(allocator: std.mem.Allocator, conn: Connection) !Session {
-        const arena = try allocator.create(std.heap.ArenaAllocator);
-        arena.* = std.heap.ArenaAllocator.init(allocator);
+    pub fn init(gpa: std.mem.Allocator, conn: Connection) !Session {
+        const arena = try gpa.create(std.heap.ArenaAllocator);
+        arena.* = std.heap.ArenaAllocator.init(gpa);
         errdefer arena.deinit();
 
         return .{

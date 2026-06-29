@@ -29,16 +29,16 @@ pub fn Pool(comptime T: type) type {
 
         /// Initialize a connection pool with capacity for `max_count` connections
         /// which will be created using the provided driver-specific `options`.
-        pub fn init(allocator: std.mem.Allocator, io: std.Io, pool_opts: PoolOptions, conn_opts: T.Options) !@This() {
+        pub fn init(io: std.Io, gpa: std.mem.Allocator, pool_opts: PoolOptions, conn_opts: T.Options) !@This() {
             return .{
-                .conns = try .initCapacity(allocator, pool_opts.max_count),
+                .conns = try .initCapacity(gpa, pool_opts.max_count),
                 .conn_opts = conn_opts,
                 .io = io,
             };
         }
 
-        pub fn getSession(self: *@This(), allocator: std.mem.Allocator) Error!Session {
-            return .init(allocator, try self.getConnection());
+        pub fn getSession(self: *@This(), gpa: std.mem.Allocator) Error!Session {
+            return .init(gpa, try self.getConnection());
         }
 
         /// Get a connection from the pool. If the pool is empty, this will block
@@ -66,7 +66,7 @@ pub fn Pool(comptime T: type) type {
 
                 if (self.conns.items.len < self.conns.capacity) {
                     const pconn = self.conns.addOneAssumeCapacity();
-                    pconn.* = .{ .pool = self, .conn = try .open(T, self.conns.allocator, self.io, self.conn_opts) };
+                    pconn.* = .{ .pool = self, .conn = try .open(T, self.io, self.conns.allocator, self.conn_opts) };
                     return util.upcast(pconn, Connection);
                 }
 
@@ -165,7 +165,7 @@ const t = std.testing;
 const TestConn = @import("testing.zig").TestConn;
 
 test Pool {
-    var pool = try Pool(TestConn).init(t.allocator, std.testing.io, .{ .max_count = 3 }, {});
+    var pool = try Pool(TestConn).init(t.io, t.allocator, .{ .max_count = 3 }, {});
     defer pool.deinit();
 
     var c1 = try pool.getConnection();
@@ -211,7 +211,7 @@ const Runner = struct {
 };
 
 test "Thread safety" {
-    var pool = try Pool(TestConn).init(t.allocator, std.testing.io, .{ .max_count = 3 }, {});
+    var pool = try Pool(TestConn).init(t.io, t.allocator, .{ .max_count = 3 }, {});
     defer pool.deinit();
 
     TestConn.created.store(0, .release);
