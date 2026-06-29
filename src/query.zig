@@ -145,11 +145,11 @@ pub fn Query(comptime T: type) type {
         }
 
         pub fn deleteOne(self: Q) !void {
-            return self.delete().limit(1).exec();
+            return self.raw.deleteOne();
         }
 
         pub fn deleteAll(self: Q) !void {
-            return self.delete().exec();
+            return self.raw.deleteAll();
         }
     };
 }

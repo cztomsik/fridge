@@ -114,6 +114,14 @@ pub const RawQuery = struct {
         return self.withPrefix(.@"DELETE FROM");
     }
 
+    pub fn deleteOne(self: RawQuery) !void {
+        return self.delete().limit(1).exec();
+    }
+
+    pub fn deleteAll(self: RawQuery) !void {
+        return self.delete().exec();
+    }
+
     pub fn select(self: RawQuery, sql: []const u8) RawQuery {
         return self.selectRaw(sql, {});
     }
@@ -348,8 +356,9 @@ pub const RawQuery = struct {
     }
 };
 
-const expectSql = @import("testing.zig").expectSql;
 const fakeDb = @import("testing.zig").fakeDb;
+const expectSql = @import("testing.zig").expectSql;
+const expectLastSql = @import("testing.zig").expectLastSql;
 
 test "select" {
     var db = try fakeDb();
@@ -386,11 +395,15 @@ test "update" {
 test "delete" {
     var db = try fakeDb();
     defer db.deinit();
-    const delete = RawQuery.init(&db).delete();
 
-    try expectSql(delete, "DELETE FROM");
-    try expectSql(delete.from("Person"), "DELETE FROM Person");
-    try expectSql(delete.from("Person").where("age < ?", 18), "DELETE FROM Person WHERE age < ?");
+    try db.table("Person").deleteAll();
+    try expectLastSql("DELETE FROM Person");
+
+    try db.table("Person").where("age < ?", 18).deleteAll();
+    try expectLastSql("DELETE FROM Person WHERE age < ?");
+
+    try db.table("Person").where("name = ?", "test").deleteOne();
+    try expectLastSql("DELETE FROM Person WHERE name = ? LIMIT ?");
 }
 
 test "raw" {
