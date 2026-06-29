@@ -23,7 +23,7 @@ pub const Part = struct {
     sql: []const u8 = "",
     args: [2]usize,
 
-    pub const Kind = enum { raw, ident, SELECT, INSERT, UPDATE, DELETE, table, cols, VALUES, SET, JOIN, @"LEFT JOIN", WHERE, OR, @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET, @"ON CONFLICT", RETURNING };
+    pub const Kind = enum { raw, ident, SELECT, table, cols, VALUES, SET, JOIN, @"LEFT JOIN", WHERE, OR, @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET, @"ON CONFLICT", RETURNING };
 
     pub fn order(self: Part) u8 {
         return switch (self.kind) {
@@ -37,15 +37,24 @@ pub const Part = struct {
 
 pub const RawQuery = struct {
     db: *Session,
-    begin: usize,
+    begin: u32,
+    prefix: Prefix = .none,
     mask: u64 = 0,
 
-    pub fn init(db: *Session) RawQuery {
-        return .{ .db = db, .begin = db.parts.items.len };
+    const Prefix = enum { none, select, @"INSERT INTO", UPDATE, @"DELETE FROM" };
+
+    comptime {
+        std.debug.assert(@sizeOf(RawQuery) == 24);
     }
 
-    pub fn raw(db: *Session, sql: []const u8, args: anytype) RawQuery {
-        return init(db).append(.raw, sql, args);
+    pub fn init(db: *Session) RawQuery {
+        return .{ .db = db, .begin = @intCast(db.parts.items.len) };
+    }
+
+    pub fn withPrefix(self: RawQuery, prefix: Prefix) RawQuery {
+        var copy = self;
+        copy.prefix = prefix;
+        return copy;
     }
 
     pub fn apply(self: RawQuery, x: anytype) RawQuery {
@@ -65,7 +74,9 @@ pub const RawQuery = struct {
     }
 
     pub fn insert(self: RawQuery) RawQuery {
-        return self.append(.INSERT, "", {});
+        var copy = self;
+        copy.prefix = .@"INSERT INTO";
+        return copy;
     }
 
     pub const into = table;
@@ -82,8 +93,9 @@ pub const RawQuery = struct {
         return self.append(.@"ON CONFLICT", sql, args);
     }
 
+    // TODO: maybe set() could also call withPrefix(.update)?
     pub fn update(self: RawQuery) RawQuery {
-        return self.append(.UPDATE, "", {});
+        return self.withPrefix(.UPDATE);
     }
 
     pub fn set(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
@@ -95,11 +107,11 @@ pub const RawQuery = struct {
             return self;
         }
 
-        return self.append(.SET, util.setters(@TypeOf(data)), data);
+        return self.set(util.setters(@TypeOf(data)), data);
     }
 
     pub fn delete(self: RawQuery) RawQuery {
-        return self.append(.DELETE, "", {});
+        return self.withPrefix(.@"DELETE FROM");
     }
 
     pub fn select(self: RawQuery, sql: []const u8) RawQuery {
@@ -107,7 +119,7 @@ pub const RawQuery = struct {
     }
 
     pub fn selectRaw(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
-        return self.append(.SELECT, sql, args);
+        return self.withPrefix(.none).append(.SELECT, sql, args);
     }
 
     pub const from = table;
@@ -169,14 +181,14 @@ pub const RawQuery = struct {
     }
 
     pub fn exec(self: RawQuery) !void {
-        var stmt = try self.prepare();
+        var stmt = try self.prepare(undefined);
         defer stmt.deinit();
 
         try stmt.exec();
     }
 
     pub fn get(self: RawQuery, comptime T: type) !?T {
-        var stmt = try self.prepare();
+        var stmt = try self.prepare(undefined);
         defer stmt.deinit();
 
         if (!try stmt.step()) return null;
@@ -192,7 +204,7 @@ pub const RawQuery = struct {
     }
 
     pub fn pluck(self: RawQuery, comptime T: type) ![]const T {
-        var stmt = try self.prepare();
+        var stmt = try self.prepare(undefined);
         defer stmt.deinit();
 
         var res: std.ArrayList(T) = .empty;
@@ -204,7 +216,7 @@ pub const RawQuery = struct {
     }
 
     pub fn fetchOne(self: RawQuery, comptime T: type) !?T {
-        var stmt = try self.prepare();
+        var stmt = try self.prepare(util.columns(T));
         defer stmt.deinit();
 
         if (!try stmt.step()) return null;
@@ -212,7 +224,7 @@ pub const RawQuery = struct {
     }
 
     pub fn fetchAll(self: RawQuery, comptime T: type) ![]const T {
-        var stmt = try self.prepare();
+        var stmt = try self.prepare(util.columns(T));
         defer stmt.deinit();
 
         var res: std.ArrayList(T) = .empty;
@@ -251,7 +263,7 @@ pub const RawQuery = struct {
         return null;
     }
 
-    pub fn prepare(self: RawQuery) !Statement {
+    pub fn prepare(self: RawQuery, columns: []const u8) !Statement {
         // Collect indices from the mask
         var ibuf: [64]*Part = undefined;
         const parts = ibuf[0..@popCount(self.mask)];
@@ -272,10 +284,18 @@ pub const RawQuery = struct {
         };
         std.sort.insertion(*Part, parts, {}, H.lt);
 
-        // Render in sorted order, tracking prev kind for proper separators
+        // Prepare writer (TODO: could we re-use this for multiple queries?)
         var aw: std.Io.Writer.Allocating = try .initCapacity(self.db.arena, 256);
         const w = &aw.writer;
 
+        // Render prefix, if there is any
+        switch (self.prefix) {
+            .none => {},
+            .select => try w.print("SELECT {s} FROM", .{columns}),
+            inline else => |t| try w.writeAll(@tagName(t)),
+        }
+
+        // Render in sorted order, tracking prev kind for proper separators
         var prev_kind: ?Part.Kind = null;
         for (parts) |part| {
             if (part.kind == .ident) {
@@ -288,14 +308,9 @@ pub const RawQuery = struct {
                 };
 
                 try w.writeAll(if (comma) ", " else switch (part.kind) {
-                    .SELECT => "SELECT ",
-                    inline .INSERT, .UPDATE, .DELETE => |t| @tagName(t),
+                    .table => " ",
                     .cols => "",
-                    .table => switch (std.ascii.toLower(aw.written()[1])) {
-                        'e' => " FROM ", // SeLECT, DeLETE
-                        'n' => " INTO ", // InSERT
-                        else => " ",
-                    },
+                    // TODO: maybe we could add `has_where` flag and the builder method itself could append different part kind (like we did before)
                     .WHERE => if (prev_kind == .WHERE or prev_kind == .OR) " AND " else " WHERE ",
                     .OR => if (prev_kind == .WHERE or prev_kind == .OR) " OR " else " WHERE ",
                     inline else => |t| " " ++ @tagName(t) ++ " ",
@@ -303,6 +318,7 @@ pub const RawQuery = struct {
             }
 
             try w.writeAll(part.sql);
+            if (part.kind == .SELECT) try w.writeAll(" FROM ");
             prev_kind = part.kind;
         }
 
@@ -341,8 +357,8 @@ test "select" {
     const select1 = RawQuery.init(&db).select("1");
 
     try expectSql(select1, "SELECT 1");
-    // try expectSql(select1.select("2"), "SELECT 1, 2");
-    // try expectSql(select1.selectRaw("?", 1), "SELECT 1, ?");
+    try expectSql(select1.select("2"), "SELECT 1, 2");
+    try expectSql(select1.selectRaw("?", 1), "SELECT 1, ?");
 }
 
 test "insert" {
@@ -350,7 +366,7 @@ test "insert" {
     defer db.deinit();
     const insert = RawQuery.init(&db).insert();
 
-    try expectSql(insert, "INSERT");
+    try expectSql(insert, "INSERT INTO");
     try expectSql(insert.into("Person"), "INSERT INTO Person");
     try expectSql(insert.into("Person").returning("id"), "INSERT INTO Person RETURNING id");
     try expectSql(insert.into("Person").cols("(name, age)"), "INSERT INTO Person(name, age)");
@@ -372,7 +388,7 @@ test "delete" {
     defer db.deinit();
     const delete = RawQuery.init(&db).delete();
 
-    try expectSql(delete, "DELETE");
+    try expectSql(delete, "DELETE FROM");
     try expectSql(delete.from("Person"), "DELETE FROM Person");
     try expectSql(delete.from("Person").where("age < ?", 18), "DELETE FROM Person WHERE age < ?");
 }

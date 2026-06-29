@@ -20,7 +20,8 @@ pub fn fakeDb() !Session {
 }
 
 pub fn expectSql(q: anytype, expected: []const u8) !void {
-    _ = try q.prepare();
+    const raw = if (comptime @hasField(@TypeOf(q), "raw")) q.raw else q;
+    _ = try raw.prepare("*");
     try expectLastSql(expected);
 }
 
