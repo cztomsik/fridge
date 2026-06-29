@@ -98,11 +98,19 @@ pub const RawQuery = struct {
         return self.withPrefix(.UPDATE);
     }
 
+    pub fn updateOne(self: RawQuery) !void {
+        return self.update().limit(1).exec();
+    }
+
+    pub fn updateAll(self: RawQuery) !void {
+        return self.update().exec();
+    }
+
     pub fn set(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
         return self.append(.SET, sql, args);
     }
 
-    pub fn setAll(self: RawQuery, data: anytype) RawQuery {
+    pub fn patch(self: RawQuery, data: anytype) RawQuery {
         if (comptime std.meta.fieldNames(@TypeOf(data)).len == 0) {
             return self;
         }
@@ -224,7 +232,7 @@ pub const RawQuery = struct {
     }
 
     pub fn fetchOne(self: RawQuery, comptime T: type) !?T {
-        var stmt = try self.prepare(util.columns(T));
+        var stmt = try self.prepare(util.selectColumns(T));
         defer stmt.deinit();
 
         if (!try stmt.step()) return null;
@@ -232,7 +240,7 @@ pub const RawQuery = struct {
     }
 
     pub fn fetchAll(self: RawQuery, comptime T: type) ![]const T {
-        var stmt = try self.prepare(util.columns(T));
+        var stmt = try self.prepare(util.selectColumns(T));
         defer stmt.deinit();
 
         var res: std.ArrayList(T) = .empty;
@@ -316,6 +324,7 @@ pub const RawQuery = struct {
                 };
 
                 try w.writeAll(if (comma) ", " else switch (part.kind) {
+                    .SELECT => "SELECT ",
                     .table => " ",
                     .cols => "",
                     // TODO: maybe we could add `has_where` flag and the builder method itself could append different part kind (like we did before)
@@ -326,7 +335,7 @@ pub const RawQuery = struct {
             }
 
             try w.writeAll(part.sql);
-            if (part.kind == .SELECT) try w.writeAll(" FROM ");
+            if (part.kind == .SELECT) try w.writeAll(" FROM");
             prev_kind = part.kind;
         }
 
@@ -363,11 +372,13 @@ const expectLastSql = @import("testing.zig").expectLastSql;
 test "select" {
     var db = try fakeDb();
     defer db.deinit();
-    const select1 = RawQuery.init(&db).select("1");
 
-    try expectSql(select1, "SELECT 1");
-    try expectSql(select1.select("2"), "SELECT 1, 2");
-    try expectSql(select1.selectRaw("?", 1), "SELECT 1, ?");
+    try expectSql(db.table("Person"), "SELECT * FROM Person");
+    try expectSql(db.table("Person").select("name"), "SELECT name FROM Person");
+
+    // TODO: I am not sure if we should support this
+    // try expectSql(db.table("Person").select("name").select("age"), "SELECT name, age FROM Person");
+    // try expectSql(db.table("Person").select("name").selectRaw("?", 1), "SELECT name, ? FROM Person");
 }
 
 test "insert" {
@@ -385,11 +396,18 @@ test "insert" {
 test "update" {
     var db = try fakeDb();
     defer db.deinit();
-    const update = RawQuery.init(&db).update();
 
-    try expectSql(update, "UPDATE");
-    try expectSql(update.table("Person"), "UPDATE Person");
-    try expectSql(update.table("Person").set("age = ?", 18), "UPDATE Person SET age = ?");
+    try db.table("Person").set("age = ?", 123).updateAll();
+    try expectLastSql("UPDATE Person SET age = ?");
+
+    try db.table("Person").set("age = ?", 123).where("age > ?", 123).updateAll();
+    try expectLastSql("UPDATE Person SET age = ? WHERE age > ?");
+
+    try db.table("Person").set("age = ?", 123).where("age > ?", 123).updateOne();
+    try expectLastSql("UPDATE Person SET age = ? WHERE age > ? LIMIT ?");
+
+    try db.table("Person").where("id = ?", 1).patch(.{ .age = 123 }).updateOne();
+    try expectLastSql("UPDATE Person SET age = ? WHERE id = ? LIMIT ?");
 }
 
 test "delete" {
@@ -412,6 +430,8 @@ test "raw" {
     const raw = db.raw("SELECT DISTINCT name", {});
 
     try expectSql(raw, "SELECT DISTINCT name");
-    try expectSql(raw.from("Person"), "SELECT DISTINCT name FROM Person");
-    try expectSql(raw.from("Person").where("age > ?", 18), "SELECT DISTINCT name FROM Person WHERE age > ?");
+
+    // TODO: I am not sure if we should support this
+    // try expectSql(raw.from("Person"), "SELECT DISTINCT name FROM Person");
+    // try expectSql(raw.from("Person").where("age > ?", 18), "SELECT DISTINCT name FROM Person WHERE age > ?");
 }

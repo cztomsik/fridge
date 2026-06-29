@@ -66,10 +66,6 @@ pub fn tableName(comptime T: type) []const u8 {
 
 pub fn columns(comptime T: type) []const u8 {
     return comptime brk: {
-        if (@typeInfo(T).@"struct".is_tuple) {
-            return "*";
-        }
-
         var res: []const u8 = "";
 
         for (@typeInfo(T).@"struct".field_names) |f| {
@@ -79,6 +75,10 @@ pub fn columns(comptime T: type) []const u8 {
 
         break :brk res;
     };
+}
+
+pub fn selectColumns(comptime T: type) []const u8 {
+    return if (@typeInfo(T).@"struct".is_tuple) "*" else columns(T);
 }
 
 pub fn placeholders(comptime T: type) []const u8 {

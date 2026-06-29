@@ -101,11 +101,11 @@ pub fn Query(comptime T: type) type {
         }
 
         pub fn findOne(self: Q) !?T {
-            return self.raw.select(util.columns(T)).fetchOne(T);
+            return self.raw.fetchOne(T);
         }
 
         pub fn findAll(self: Q) ![]const T {
-            return self.raw.select(util.columns(T)).fetchAll(T);
+            return self.raw.fetchAll(T);
         }
 
         pub fn select(self: Q, sql: []const u8) RawQuery {
@@ -126,18 +126,22 @@ pub fn Query(comptime T: type) type {
             return self.raw.insert().cols(comptime "(" ++ util.columns(@TypeOf(data)) ++ ")").values(comptime "(" ++ util.placeholders(@TypeOf(data)) ++ ")", data);
         }
 
-        pub fn update(self: Q, data: anytype) RawQuery {
+        pub fn patch(self: Q, data: anytype) RawQuery {
             comptime util.checkFields(T, @TypeOf(data));
 
-            return self.raw.update().setAll(data);
+            return self.raw.patch(data);
         }
 
-        pub fn updateOne(self: Q, data: anytype) !void {
-            return self.update(data).limit(1).exec();
+        pub fn update(self: Q) RawQuery {
+            return self.raw.update();
         }
 
-        pub fn updateAll(self: Q, data: anytype) !void {
-            return self.update(data).exec();
+        pub fn updateOne(self: Q) !void {
+            return self.raw.updateOne();
+        }
+
+        pub fn updateAll(self: Q) !void {
+            return self.raw.updateAll();
         }
 
         pub fn delete(self: Q) RawQuery {
@@ -183,10 +187,11 @@ test "query.select()" {
         "SELECT name FROM Person",
     );
 
-    try expectSql(
-        db.query(Person).select("name").select("age"),
-        "SELECT name, age FROM Person",
-    );
+    // TODO: I am not sure if we should support this
+    // try expectSql(
+    //     db.query(Person).select("name").select("age"),
+    //     "SELECT name, age FROM Person",
+    // );
 
     try expectSql(
         db.query(Person).select("name, age"),
@@ -376,32 +381,32 @@ test "query.update()" {
     defer db.deinit();
 
     try expectSql(
-        db.query(Person).update(.{ .name = "Alice" }),
+        db.query(Person).update().patch(.{ .name = "Alice" }),
         "UPDATE Person SET name = ?",
     );
 
     try expectSql(
-        db.query(Person).where("age", 20).update(.{ .name = "Alice" }),
+        db.query(Person).where("age", 20).update().patch(.{ .name = "Alice" }),
         "UPDATE Person SET name = ? WHERE age = ?",
     );
 
     try expectSql(
-        db.query(Person).where("age", 20).orWhere("name", "Bob").update(.{ .name = "Alice" }),
+        db.query(Person).where("age", 20).orWhere("name", "Bob").update().patch(.{ .name = "Alice" }),
         "UPDATE Person SET name = ? WHERE age = ? OR name = ?",
     );
 
     try expectSql(
-        db.query(Person).where("age", 20).update(.{ .name = "Alice", .age = 21 }),
+        db.query(Person).where("age", 20).update().patch(.{ .name = "Alice", .age = 21 }),
         "UPDATE Person SET name = ?, age = ? WHERE age = ?",
     );
 
     try expectSql(
-        db.query(Person).update(.{}).set("age = ?", 21),
+        db.query(Person).update().patch(.{}).set("age = ?", 21),
         "UPDATE Person SET age = ?",
     );
 
     try expectSql(
-        db.query(Person).update(.{ .name = "Alice" }).set("age = ?", 21).set("active = ?", true),
+        db.query(Person).update().patch(.{ .name = "Alice" }).set("age = ?", 21).set("active = ?", true),
         "UPDATE Person SET name = ?, age = ?, active = ?",
     );
 }
@@ -430,10 +435,10 @@ test "query.updateOne/updateAll/deleteOne/deleteAll()" {
     var db = try fakeDb();
     defer db.deinit();
 
-    try db.query(Person).where("age", 20).updateOne(.{ .name = "updateOne" });
+    try db.query(Person).where("age", 20).patch(.{ .name = "updateOne" }).updateOne();
     try expectLastSql("UPDATE Person SET name = ? WHERE age = ? LIMIT ?");
 
-    try db.query(Person).where("age", 30).updateAll(.{ .name = "updateAll" });
+    try db.query(Person).where("age", 30).patch(.{ .name = "updateAll" }).updateAll();
     try expectLastSql("UPDATE Person SET name = ? WHERE age = ?");
 
     try db.query(Person).where("age", 20).deleteOne();

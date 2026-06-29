@@ -113,7 +113,7 @@ pub const Session = struct {
 
     /// Update a record by its primary key.
     pub fn update(self: *Session, comptime T: type, id: util.Id(T), data: anytype) !void {
-        return self.query(T).where("id", id).updateOne(data);
+        return self.query(T).where("id", id).patch(data).updateOne();
     }
 
     /// Delete a record by its primary key.
