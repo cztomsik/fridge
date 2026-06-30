@@ -152,6 +152,21 @@ test "db.raw()" {
     try t.expectEqual(1, try db.raw("SELECT 1", {}).get(u32));
     try t.expectEqual(3, try db.raw("SELECT 1 + ?", 2).get(u32));
     try t.expectEqualSlices(u32, &.{ 1, 2 }, try db.raw("SELECT id FROM Person", {}).pluck(u32));
+
+    // This will work even if the order of fields does not match the column order
+    const people = try db.raw("SELECT * FROM Person", {}).fetchAll(Person);
+    try t.expectEqual(2, people.len);
+
+    // Subset works too
+    const people2 = try db.raw("SELECT * FROM Person", {}).fetchAll(struct { name: []const u8 });
+    try t.expectEqual(2, people2.len);
+
+    // And so do tuples
+    const rows = try db.raw("SELECT id, name FROM Person", {}).fetchAll(struct { u32, []const u8 });
+    try t.expectEqual(2, rows.len);
+
+    // This wont (missing column)
+    try t.expectError(error.MissingColumn, db.raw("SELECT * FROM Person", {}).fetchAll(struct { missing: []const u8 }));
 }
 
 test "db.table()" {
