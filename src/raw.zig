@@ -23,7 +23,7 @@ pub const Part = struct {
     sql: []const u8 = "",
     args: [2]usize,
 
-    pub const Kind = enum { raw, ident, SELECT, table, cols, VALUES, SET, JOIN, @"LEFT JOIN", WHERE, OR, @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET, @"ON CONFLICT", RETURNING };
+    pub const Kind = enum { raw, ident, SELECT, table, VALUES, SET, JOIN, @"LEFT JOIN", WHERE, OR, @"GROUP BY", HAVING, @"ORDER BY", LIMIT, OFFSET, @"ON CONFLICT", RETURNING };
 
     pub fn order(self: Part) u8 {
         return switch (self.kind) {
@@ -73,20 +73,14 @@ pub const RawQuery = struct {
         return self.append(.table, sql, {});
     }
 
-    pub fn insert(self: RawQuery) RawQuery {
-        var copy = self;
-        copy.prefix = .@"INSERT INTO";
-        return copy;
+    pub fn insert(self: RawQuery, data: anytype) RawQuery {
+        const T = @TypeOf(data);
+        const sql = comptime if (@typeInfo(T).@"struct".field_names.len > 0) "(" ++ util.columns(T) ++ ") VALUES (" ++ util.placeholders(T) ++ ")" else "";
+        return self.insertRaw(sql, data);
     }
 
-    pub const into = table;
-
-    pub fn cols(self: RawQuery, sql: []const u8) RawQuery {
-        return self.append(.cols, sql, {});
-    }
-
-    pub fn values(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
-        return self.append(.VALUES, sql, args);
+    pub fn insertRaw(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
+        return self.withPrefix(.@"INSERT INTO").append(.VALUES, sql, args);
     }
 
     pub fn onConflict(self: RawQuery, sql: []const u8, args: anytype) RawQuery {
@@ -326,7 +320,7 @@ pub const RawQuery = struct {
                 try w.writeAll(if (comma) ", " else switch (part.kind) {
                     .SELECT => "SELECT ",
                     .table => " ",
-                    .cols => "",
+                    .VALUES => "",
                     // TODO: maybe we could add `has_where` flag and the builder method itself could append different part kind (like we did before)
                     .WHERE => if (prev_kind == .WHERE or prev_kind == .OR) " AND " else " WHERE ",
                     .OR => if (prev_kind == .WHERE or prev_kind == .OR) " OR " else " WHERE ",
@@ -384,13 +378,10 @@ test "select" {
 test "insert" {
     var db = try fakeDb();
     defer db.deinit();
-    const insert = RawQuery.init(&db).insert();
 
-    try expectSql(insert, "INSERT INTO");
-    try expectSql(insert.into("Person"), "INSERT INTO Person");
-    try expectSql(insert.into("Person").returning("id"), "INSERT INTO Person RETURNING id");
-    try expectSql(insert.into("Person").cols("(name, age)"), "INSERT INTO Person(name, age)");
-    try expectSql(insert.into("Person").cols("(name, age)").values("(?, ?)", .{ "Alice", 18 }), "INSERT INTO Person(name, age) VALUES (?, ?)");
+    try expectSql(db.table("Person").insert(.{}).returning("id"), "INSERT INTO Person RETURNING id");
+    try expectSql(db.table("Person").insert(.{ .name = "Alice", .age = 23 }), "INSERT INTO Person(name, age) VALUES (?, ?)");
+    try expectSql(db.table("Person").insert(.{ .name = "Alice", .age = 23 }).returning("id"), "INSERT INTO Person(name, age) VALUES (?, ?) RETURNING id");
 }
 
 test "update" {

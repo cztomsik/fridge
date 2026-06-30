@@ -123,7 +123,7 @@ pub fn Query(comptime T: type) type {
         pub fn insert(self: Q, data: anytype) RawQuery {
             comptime util.checkFields(T, @TypeOf(data));
 
-            return self.raw.insert().cols(comptime "(" ++ util.columns(@TypeOf(data)) ++ ")").values(comptime "(" ++ util.placeholders(@TypeOf(data)) ++ ")", data);
+            return self.raw.insert(data);
         }
 
         pub fn patch(self: Q, data: anytype) RawQuery {
@@ -362,7 +362,7 @@ test "query.insert()" {
 
     try expectSql(
         db.query(Person).insert(.{}),
-        "INSERT INTO Person() VALUES ()",
+        "INSERT INTO Person",
     );
 
     try expectSql(
