@@ -88,18 +88,27 @@ pub const SQLite3 = opaque {
     }
 
     pub fn execAll(self: *SQLite3, sql: []const u8) !void {
-        // TODO: c_allocator is just a quickfix for this https://github.com/cztomsik/fridge/blob/62bf1daeccf6781b5846ec70042d2ebaf3fb8644/src/sqlite.zig#L50
-        const csql = try std.heap.c_allocator.dupeSentinel(u8, sql, 0);
-        defer std.heap.c_allocator.free(csql);
+        var next: []const u8 = std.mem.trimEnd(u8, sql, " \n\t");
+        var zTail: [*c]const u8 = null;
 
-        try check(c.sqlite3_exec(self.ptr(), csql, null, null, null));
+        while (next.len > 0) {
+            var stmt = try self.prepare2(next, &zTail) orelse break;
+            defer stmt.deinit();
+
+            try stmt.exec();
+            next = if (zTail != null and zTail != next.ptr + next.len) next[@intFromPtr(zTail) - @intFromPtr(next.ptr) ..] else "";
+        }
     }
 
     pub fn prepare(self: *SQLite3, sql: []const u8) !Statement {
-        var raw_stmt: ?*c.sqlite3_stmt = null;
-        try check(c.sqlite3_prepare_v2(self.ptr(), sql.ptr, @intCast(sql.len), &raw_stmt, null));
+        return try self.prepare2(sql, null) orelse error.NoSql;
+    }
 
-        return util.upcast(@as(*Stmt, @ptrCast(raw_stmt.?)), Statement);
+    fn prepare2(self: *SQLite3, sql: []const u8, pzTail: ?*[*c]const u8) !?Statement {
+        var stmt: ?*c.sqlite3_stmt = null;
+        try check(c.sqlite3_prepare_v2(self.ptr(), sql.ptr, @intCast(sql.len), &stmt, pzTail));
+
+        return if (stmt) |s| util.upcast(@as(*Stmt, @ptrCast(s)), Statement) else null;
     }
 
     pub fn rowsAffected(self: *SQLite3) !usize {
@@ -202,3 +211,20 @@ pub fn check(code: c_int) !void {
 
 // Because std.c.dlopen is wrong.
 extern "c" fn dlopen(path: ?[*:0]const u8, mode: c_int) ?*anyopaque;
+
+test "execAll/prepare edge-cases" {
+    var db = try SQLite3.open(std.testing.io, std.testing.allocator, .{ .filename = ":memory:" });
+    defer db.deinit();
+
+    try db.execAll("");
+    try db.execAll("-- No SQL here");
+    try db.execAll(
+        \\CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT);
+        \\-- Insert some data
+        \\INSERT INTO t (val) VALUES ('a');
+        \\INSERT INTO t (val) VALUES ('b');
+    );
+
+    try std.testing.expectError(error.NoSql, db.prepare(""));
+    try std.testing.expectError(error.NoSql, db.prepare("-- No SQL"));
+}

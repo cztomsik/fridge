@@ -5,4 +5,5 @@ pub const Error = error{
     NotNullViolation,
     UniqueViolation,
     DbError,
+    NoSql,
 };
