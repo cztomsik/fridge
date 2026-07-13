@@ -13,8 +13,8 @@
 
     .dependencies = .{
         .sqlite_source = .{
-            .url = "https://sqlite.org/2026/sqlite-autoconf-3530300.tar.gz",
-            .hash = "N-V-__8AAIw5wwBkDrobYflTVStf-53EVVlPT4h64OZW4whp",
+            .url = "git+https://github.com/cztomsik/sqlite-select-update-limit-amalgation?ref=main#bd0e3061c35ac7ab81aee38a9edbaa1e99037d67",
+            .hash = "N-V-__8AAMZYnABYCsJ53fhCNiox9_nQMzpWrML0N-Th7EeE",
         },
     },
 }

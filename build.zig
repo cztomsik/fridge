@@ -29,7 +29,10 @@ pub fn build(b: *std.Build) !void {
     if (bundle) {
         if (b.lazyDependency("sqlite_source", .{})) |src| {
             lib.addIncludePath(src.path("."));
-            lib.addCSourceFile(.{ .file = src.path("sqlite3.c"), .flags = &.{"-std=c99"} });
+            lib.addCSourceFile(.{ .file = src.path("sqlite3.c"), .flags = &.{
+                "-std=c99",
+                "-DSQLITE_ENABLE_UPDATE_DELETE_LIMIT=1",
+            } });
         }
     } else {
         // lib.linkSystemLibrary("sqlite3", .{});
