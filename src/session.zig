@@ -39,9 +39,14 @@ pub const Session = struct {
     }
 
     /// Push query arguments to the session's args buffer and return the [begin, end) range.
-    /// Structs and tuples are unpacked field-by-field.
+    /// Structs and tuples are unpacked field-by-field, unless the type defines `toValue`,
+    /// in which case it is treated as a single opaque value.
     pub fn pushArgs(self: *Session, args: anytype) ![2]usize {
         const T = @TypeOf(args);
+
+        if (comptime std.meta.hasFn(T, "toValue")) {
+            return self.pushArgs(.{args});
+        }
 
         switch (@typeInfo(T)) {
             .void => return @splat(0),
@@ -237,4 +242,34 @@ test "db.delete(T, id)" {
     try db.delete(Person, 1);
     try t.expectEqual(1, db.conn.rowsAffected());
     try t.expectEqual(null, db.find(Person, 1));
+}
+
+const Identifier = struct {
+    namespace: []const u8,
+    path: []const u8,
+
+    pub fn toValue(self: Identifier, arena: std.mem.Allocator) Value {
+        return .{ .string = std.fmt.allocPrint(arena, "{s}:{s}", .{ self.namespace, self.path }) catch unreachable };
+    }
+
+    pub fn fromValue(val: Value, _: std.mem.Allocator) Identifier {
+        if (std.mem.lastIndexOfScalar(u8, val.string, ':')) |i| {
+            return .{ .namespace = val.string[0..i], .path = val.string[i + 1 ..] };
+        }
+        return .{ .namespace = "", .path = val.string };
+    }
+};
+
+test "pushArgs serializes toValue types as a single value" {
+    var db = try createDb(ddl);
+    defer db.deinit();
+
+    const id = Identifier{ .namespace = "soul_campfire", .path = "something" };
+    const range = try db.pushArgs(id);
+
+    // A toValue type must serialize to exactly one arg, not one per field
+    try t.expectEqual(@as(usize, 1), range[1] - range[0]);
+    const v = db.args.items[range[0]];
+    try t.expect(v == .string);
+    try t.expectEqualStrings("soul_campfire:something", v.string);
 }

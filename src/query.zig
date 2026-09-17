@@ -164,6 +164,28 @@ const Person = struct {
     age: u8,
 };
 
+const Identifier = struct {
+    namespace: []const u8,
+    path: []const u8,
+
+    pub fn toValue(self: Identifier, arena: std.mem.Allocator) Value {
+        return .{ .string = std.fmt.allocPrint(arena, "{s}:{s}", .{ self.namespace, self.path }) catch unreachable };
+    }
+
+    pub fn fromValue(val: Value, _: std.mem.Allocator) Identifier {
+        if (std.mem.lastIndexOfScalar(u8, val.string, ':')) |i| {
+            return .{ .namespace = val.string[0..i], .path = val.string[i + 1 ..] };
+        }
+        return .{ .namespace = "", .path = val.string };
+    }
+};
+
+const App = struct {
+    id: u32,
+    name: []const u8,
+    uid: Identifier,
+};
+
 const fakeDb = @import("testing.zig").fakeDb;
 const expectSql = @import("testing.zig").expectSql;
 const expectLastSql = @import("testing.zig").expectLastSql;
@@ -206,6 +228,24 @@ test "query.join()" {
     try expectSql(
         db.query(Person).join("Address ON Person.id = Address.person_id"),
         "SELECT * FROM Person JOIN Address ON Person.id = Address.person_id",
+    );
+}
+
+test "query.where() with toValue type" {
+    var db = try fakeDb();
+    defer db.deinit();
+
+    // A custom type with toValue must serialize to a single placeholder,
+    // not be expanded field-by-field.
+    try expectSql(
+        db.query(App).where("uid", .{ .namespace = "soul_campfire", .path = "x" }),
+        "SELECT * FROM App WHERE uid = ?",
+    );
+
+    // Raw where with a toValue type works the same way
+    try expectSql(
+        db.query(App).whereRaw("uid = ?", .{ .namespace = "a", .path = "b" }),
+        "SELECT * FROM App WHERE uid = ?",
     );
 }
 
