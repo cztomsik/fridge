@@ -11,7 +11,7 @@ const util = @import("util.zig");
 // - a bounded array could work too, but mask is simpler (builder methods are cheap)
 // - immutability was not a hard constraint, but it comes for free with this design
 // - I am still not 100% sure if re-ordering is worth it, but it's a single pre-render step now
-// - (consecutive) builder methods need to be called in the (sliding) window of 64 parts
+// - (consecutive) builder methods need to be called in the (sliding) window of 128 parts
 //   - we could probably check last_offset and do a simple copy-on-write (maybe later, IDK)
 // - we currently have 2 separate lists for parts & values; we could probably encode both in
 //   one, but I'm not sure if it's worth it. maybe if Part becomes a tagged union, then this
@@ -39,12 +39,12 @@ pub const RawQuery = struct {
     db: *Session,
     begin: u32,
     prefix: Prefix = .none,
-    mask: u64 = 0,
+    mask: u128 = 0,
 
     const Prefix = enum { none, select, @"INSERT INTO", UPDATE, @"DELETE FROM" };
 
     comptime {
-        std.debug.assert(@sizeOf(RawQuery) == 24);
+        std.debug.assert(@sizeOf(RawQuery) == 32);
     }
 
     pub fn init(db: *Session) RawQuery {
@@ -275,13 +275,13 @@ pub const RawQuery = struct {
 
     pub fn prepare(self: RawQuery, columns: []const u8) !Statement {
         // Collect indices from the mask
-        var ibuf: [64]*Part = undefined;
+        var ibuf: [128]*Part = undefined;
         const parts = ibuf[0..@popCount(self.mask)];
         var mask = self.mask;
         for (parts) |*part| {
-            const bit: u6 = @intCast(@ctz(mask));
+            const bit: u7 = @intCast(@ctz(mask));
             part.* = &self.db.parts.items[self.begin..][bit];
-            mask &= ~(@as(u64, 1) << bit);
+            mask &= ~(@as(u128, 1) << bit);
         }
 
         // Sort
@@ -354,7 +354,7 @@ pub const RawQuery = struct {
         // TODO: we could use mask=0 to track OOM queries and return error.OutOfMemory in prepare()
         self.db.parts.append(self.db.arena, .{ .kind = kind, .sql = sql, .args = args_range }) catch @panic("OOM");
         var copy = self;
-        copy.mask |= @as(u64, 1) << @intCast(bit);
+        copy.mask |= @as(u128, 1) << @as(u7, @intCast(bit));
         return copy;
     }
 };
