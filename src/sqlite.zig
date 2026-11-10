@@ -46,8 +46,14 @@ pub const SQLite3 = opaque {
             inline else => |t| db.execAll("PRAGMA foreign_keys = " ++ @tagName(t)) catch return error.ConnectionFailed,
         };
 
-        for (options.extensions) |ext| {
-            db.loadExtension(ext) catch return error.ConnectionFailed;
+        if (options.extensions.len > 0 and comptime @hasDecl(c, "sqlite3_enable_load_extension")) {
+            try check(c.sqlite3_enable_load_extension(db.ptr(), 1));
+            for (options.extensions) |ext| {
+                db.loadExtension(ext) catch return error.ConnectionFailed;
+            }
+        } else {
+            util.log.err("SQLite extension loading is disabled", .{});
+            return error.LoadExtensionFailed;
         }
 
         return db;
@@ -74,13 +80,8 @@ pub const SQLite3 = opaque {
             else => {}, // TODO: Windows
         }
 
-        if (comptime @hasField(c, "sqlite3_enable_load_extension")) {
-            const zName = try std.fmt.bufPrintSentinel(&buf, "{s}", .{name}, 0);
-            try check(c.sqlite3_load_extension(self.ptr(), zName, null, null));
-        } else {
-            util.log.err("SQLite extension loading is disabled", .{});
-            return error.LoadExtensionFailed;
-        }
+        const zName = try std.fmt.bufPrintSentinel(&buf, "{s}", .{name}, 0);
+        try check(c.sqlite3_load_extension(self.ptr(), zName, null, null));
     }
 
     pub fn dialect(_: *SQLite3) Connection.Dialect {
